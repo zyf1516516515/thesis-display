@@ -1,36 +1,55 @@
 name: Deploy Vue3 to GitHub Pages
 
 on:
-  # 监听 main 分支的 push 事件
   push:
-    branches: [ master ]
-    # 如果你的主分支叫 master，请把上面的 main 改成 master
+    branches: [master]
+  workflow_dispatch:
 
 permissions:
-  contents: write # 允许 Action 修改仓库内容（推送 dist）
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
 
 jobs:
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout 🛎️
+      - name: Checkout
         uses: actions/checkout@v4
+        with:
+          lfs: true
 
-      - name: Setup Node.js ⚙️
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20' # 推荐使用较新版本
+          node-version: 20
+          cache: npm
 
-      - name: Install and Build 🔧
-        run: |
-          npm install
-          npm run build
-          # 如果你在用 pnpm 或 yarn，请自行替换命令，例如：
-          # yarn install && yarn build
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
 
-      - name: Deploy 🚀
-        uses: JamesIves/github-pages-deploy-action@v4
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Upload Pages Artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          folder: dist # Vue 打包生成的目录
-          branch: gh-pages # 部署到这个分支
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

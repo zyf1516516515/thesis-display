@@ -1,31 +1,25 @@
-import { fileURLToPath, URL } from 'node:url'
+﻿import { fileURLToPath, URL } from 'node:url'
 
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import vueDevTools from 'vite-plugin-vue-devtools'
 import { viteSingleFile } from 'vite-plugin-singlefile'
 
+// 大体积 mp4 无法与 singlefile 强制内联共存，默认关闭。
+// 如确需单文件输出，可在构建前设置环境变量 VITE_SINGLEFILE=true。
+const enableSingleFile = process.env.VITE_SINGLEFILE === 'true'
 
-
-// https://vite.dev/config/
 export default defineConfig({
   plugins: [
     vue(),
     vueDevTools(),
-    viteSingleFile() // 演示打包配置项
-  ],
+    enableSingleFile ? viteSingleFile() : null,
+  ].filter(Boolean),
   resolve: {
     alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url))
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
-/*
-  //演示打包配置项
-  base: './',
-  build: {
-    assetsInlineLimit: 100000000, // 强制让所有资源都内联（避免生成额外的 assets 文件）
-  }*/
-
-  // github.io配置项
+  // GitHub Pages 配置
   base: '/thesis-display/',
 })
