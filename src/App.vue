@@ -9,16 +9,34 @@ const comingSoonMessage = ref(siteContent.meta.comingSoonMessage || '正在开�
 const datasetSubmissionVisible = ref(false)
 const contactModalVisible = ref(false)
 const coverInputRef = ref(null)
-const datasetForm = ref({
-  datasetName: '',
-  shortDescription: '',
-  dataFormatScale: '',
-  cloudStorageLink: '',
-  cloudProviders: [],
-  usageLicense: '',
-  citationMethod: '',
-  coverImageName: '',
-})
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
+const URL_TOKEN_PATTERN = /https?:\/\/[^\s]+/gi
+const LINK_FIELD_KEYS = ['cloudStorageLink1', 'cloudStorageLink2']
+const DNS_TIMEOUT_MS = 5000
+const URL_TIMEOUT_MS = 6000
+
+function createEmptyDatasetForm() {
+  return {
+    datasetName: '',
+    shortDescription: '',
+    dataFormatScale: '',
+    cloudStorageLink1: '',
+    cloudStorageLink2: '',
+    usageLicense: '',
+    citationMethod: '',
+    userEmail: '',
+    coverImageName: '',
+    coverImagePreview: '',
+  }
+}
+
+function createCheckState(status = 'idle', message = '') {
+  return { status, message }
+}
+
+const datasetForm = ref(createEmptyDatasetForm())
+const emailCheck = ref(createCheckState())
+const linkChecks = ref(LINK_FIELD_KEYS.map(() => createCheckState()))
 const contactForm = ref({
   subject: '',
   content: '',
@@ -31,7 +49,18 @@ function setBodyScrollLock(locked) {
   if (typeof document === 'undefined') {
     return
   }
-  document.body.classList.toggle(BODY_LOCK_CLASS, locked)
+  const body = document.body
+  body.classList.toggle(BODY_LOCK_CLASS, locked)
+
+  if (!locked) {
+    body.style.removeProperty('--scrollbar-lock-offset')
+    body.style.removeProperty('padding-right')
+    return
+  }
+
+  const scrollbarWidth = Math.max(0, window.innerWidth - document.documentElement.clientWidth)
+  body.style.setProperty('--scrollbar-lock-offset', `${scrollbarWidth}px`)
+  body.style.paddingRight = `${scrollbarWidth}px`
 }
 
 function resolveComingSoonMessage(messageKey) {
@@ -56,22 +85,236 @@ function closeDatasetSubmissionModal() {
   datasetSubmissionVisible.value = false
 }
 
-function toggleCloudProvider(providerKey) {
-  const current = datasetForm.value.cloudProviders
-  if (current.includes(providerKey)) {
-    datasetForm.value.cloudProviders = current.filter((key) => key !== providerKey)
-    return
-  }
-  datasetForm.value.cloudProviders = [...current, providerKey]
-}
-
 function triggerCoverUpload() {
   coverInputRef.value?.click()
 }
 
+function revokeCoverPreview() {
+  const preview = datasetForm.value.coverImagePreview
+  if (preview && preview.startsWith('blob:')) {
+    URL.revokeObjectURL(preview)
+  }
+}
+
 function handleCoverChange(event) {
   const [file] = event.target.files || []
-  datasetForm.value.coverImageName = file ? file.name : ''
+  revokeCoverPreview()
+  if (!file) {
+    datasetForm.value.coverImageName = ''
+    datasetForm.value.coverImagePreview = ''
+    return
+  }
+  datasetForm.value.coverImageName = file.name
+  datasetForm.value.coverImagePreview = URL.createObjectURL(file)
+}
+
+function resetDatasetForm() {
+  revokeCoverPreview()
+  datasetForm.value = createEmptyDatasetForm()
+  emailCheck.value = createCheckState()
+  linkChecks.value = LINK_FIELD_KEYS.map(() => createCheckState())
+  if (coverInputRef.value) {
+    coverInputRef.value.value = ''
+  }
+}
+
+function getCheckIcon(status) {
+  if (status === 'valid') {
+    return '✓'
+  }
+  if (status === 'invalid') {
+    return '✕'
+  }
+  if (status === 'checking') {
+    return '...'
+  }
+  return ''
+}
+
+function resetEmailCheck() {
+  emailCheck.value = createCheckState()
+}
+
+function setLinkCheck(index, status, message = '') {
+  linkChecks.value = linkChecks.value.map((item, currentIndex) => {
+    if (currentIndex !== index) {
+      return item
+    }
+    return createCheckState(status, message)
+  })
+}
+
+function resetCloudLinkCheck(index) {
+  setLinkCheck(index, 'idle', '')
+}
+
+function validateSingleLinkFormat(rawValue) {
+  const value = rawValue.trim()
+  if (!value) {
+    return { ok: false, reason: 'Please enter a URL.' }
+  }
+
+  const detected = value.match(URL_TOKEN_PATTERN) || []
+  if (detected.length > 1) {
+    return { ok: false, reason: 'Multiple links detected. Please enter exactly one URL.' }
+  }
+  if (/\s/.test(value)) {
+    return { ok: false, reason: 'Invalid URL format.' }
+  }
+
+  try {
+    const parsed = new URL(value)
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      return { ok: false, reason: 'Invalid URL format. Only http/https is supported.' }
+    }
+    return { ok: true, normalizedUrl: parsed.toString() }
+  } catch {
+    return { ok: false, reason: 'Invalid URL format.' }
+  }
+}
+
+async function fetchWithTimeout(url, options, timeoutMs) {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetch(url, { ...options, signal: controller.signal })
+  } finally {
+    clearTimeout(timeoutId)
+  }
+}
+
+async function checkUrlReachability(targetUrl) {
+  if (window.location.protocol === 'https:' && targetUrl.startsWith('http://')) {
+    return { ok: false, reason: 'HTTP links are blocked on HTTPS pages.' }
+  }
+
+  try {
+    await fetchWithTimeout(targetUrl, { method: 'HEAD', mode: 'no-cors', cache: 'no-store' }, URL_TIMEOUT_MS)
+    return { ok: true, reason: 'URL format and reachability check passed.' }
+  } catch {
+    try {
+      await fetchWithTimeout(targetUrl, { method: 'GET', mode: 'no-cors', cache: 'no-store' }, URL_TIMEOUT_MS)
+      return { ok: true, reason: 'URL format and reachability check passed.' }
+    } catch {
+      return { ok: false, reason: 'URL is not reachable.' }
+    }
+  }
+}
+
+async function validateCloudLink(index) {
+  const fieldKey = LINK_FIELD_KEYS[index]
+  const currentValue = datasetForm.value[fieldKey]
+  if (!currentValue.trim()) {
+    setLinkCheck(index, 'idle', '')
+    return
+  }
+
+  const formatResult = validateSingleLinkFormat(currentValue)
+  if (!formatResult.ok) {
+    setLinkCheck(index, 'invalid', formatResult.reason)
+    return
+  }
+
+  setLinkCheck(index, 'checking', 'Checking URL reachability...')
+  const reachability = await checkUrlReachability(formatResult.normalizedUrl)
+  if (datasetForm.value[fieldKey] !== currentValue) {
+    return
+  }
+
+  if (reachability.ok) {
+    datasetForm.value[fieldKey] = formatResult.normalizedUrl
+    setLinkCheck(index, 'valid', reachability.reason)
+    return
+  }
+  setLinkCheck(index, 'invalid', reachability.reason)
+}
+
+async function queryDnsRecord(domain, recordType) {
+  const providers = [
+    `https://dns.google/resolve?name=${encodeURIComponent(domain)}&type=${recordType}`,
+    `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(domain)}&type=${recordType}`,
+  ]
+
+  let providerReached = false
+  for (const endpoint of providers) {
+    try {
+      const response = await fetchWithTimeout(
+        endpoint,
+        { method: 'GET', headers: { Accept: 'application/dns-json' }, cache: 'no-store' },
+        DNS_TIMEOUT_MS,
+      )
+      if (!response.ok) {
+        continue
+      }
+      providerReached = true
+      const payload = await response.json()
+      const answers = Array.isArray(payload.Answer) ? payload.Answer : []
+      const expectedType = recordType === 'MX' ? 15 : 1
+      const hasRecord = answers.some((item) => Number(item.type) === expectedType)
+
+      if (Number(payload.Status) === 3) {
+        return { ok: false, providerReached: true, reason: 'Email domain does not exist.' }
+      }
+      if (hasRecord) {
+        return { ok: true, providerReached: true }
+      }
+    } catch {
+      // try next provider
+    }
+  }
+
+  if (!providerReached) {
+    return { ok: false, providerReached: false, reason: 'Email domain reachability check failed.' }
+  }
+  return { ok: false, providerReached: true, reason: '' }
+}
+
+async function validateUserEmail() {
+  const currentValue = datasetForm.value.userEmail.trim()
+  if (!currentValue) {
+    emailCheck.value = createCheckState('idle', '')
+    return
+  }
+  if (!EMAIL_PATTERN.test(currentValue)) {
+    emailCheck.value = createCheckState('invalid', 'Invalid email format.')
+    return
+  }
+
+  const domain = currentValue.split('@').at(-1)?.toLowerCase() || ''
+  if (!domain || domain.startsWith('.') || domain.endsWith('.') || domain.includes('..')) {
+    emailCheck.value = createCheckState('invalid', 'Invalid email domain format.')
+    return
+  }
+
+  emailCheck.value = createCheckState('checking', 'Checking email domain reachability...')
+
+  const mxResult = await queryDnsRecord(domain, 'MX')
+  if (datasetForm.value.userEmail.trim() !== currentValue) {
+    return
+  }
+  if (mxResult.ok) {
+    emailCheck.value = createCheckState('valid', 'Email format and domain check passed.')
+    return
+  }
+  if (mxResult.reason === 'Email domain does not exist.') {
+    emailCheck.value = createCheckState('invalid', mxResult.reason)
+    return
+  }
+
+  const aResult = await queryDnsRecord(domain, 'A')
+  if (datasetForm.value.userEmail.trim() !== currentValue) {
+    return
+  }
+  if (aResult.ok) {
+    emailCheck.value = createCheckState('valid', 'Domain is reachable (A record found).')
+    return
+  }
+
+  if (!mxResult.providerReached && !aResult.providerReached) {
+    emailCheck.value = createCheckState('invalid', 'Email domain reachability check failed.')
+    return
+  }
+  emailCheck.value = createCheckState('invalid', 'No MX/A DNS record found for this domain.')
 }
 
 function submitDatasetSubmission() {
@@ -152,6 +395,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   setBodyScrollLock(false)
+  revokeCoverPreview()
   window.removeEventListener('hashchange', handleHashChange)
 })
 </script>
@@ -450,38 +694,63 @@ onBeforeUnmount(() => {
 
                 <div class="dataset-form-row">
                   <label class="dataset-form-label required">{{ siteContent.sections.dataRelease.portal.fields.dataFormatScale }}</label>
-                  <input
-                    v-model="datasetForm.dataFormatScale"
-                    type="text"
-                    class="dataset-input"
-                    :placeholder="siteContent.sections.dataRelease.portal.placeholders.dataFormatScale"
-                  />
+                  <div class="dataset-field-stack">
+                    <input
+                      v-model="datasetForm.dataFormatScale"
+                      type="text"
+                      class="dataset-input"
+                      list="dataset-format-options"
+                      :placeholder="siteContent.sections.dataRelease.portal.placeholders.dataFormatScale"
+                    />
+                    <datalist id="dataset-format-options">
+                      <option
+                        v-for="format in siteContent.sections.dataRelease.portal.dataFormatOptions"
+                        :key="format"
+                        :value="format"
+                      />
+                    </datalist>
+                  </div>
                 </div>
 
                 <div class="dataset-form-row">
-                  <label class="dataset-form-label required">{{ siteContent.sections.dataRelease.portal.fields.cloudStorageLink }}</label>
+                  <label class="dataset-form-label">{{ siteContent.sections.dataRelease.portal.fields.cloudStorageLink1 }}</label>
                   <div class="dataset-field-stack">
-                    <input
-                      v-model="datasetForm.cloudStorageLink"
-                      type="text"
-                      class="dataset-input"
-                      :placeholder="siteContent.sections.dataRelease.portal.placeholders.cloudStorageLink"
-                    />
-                    <div class="cloud-provider-list">
-                      <label
-                        v-for="provider in siteContent.sections.dataRelease.portal.cloudProviders"
-                        :key="provider.key"
-                        :class="['cloud-provider-chip', { active: datasetForm.cloudProviders.includes(provider.key) }]"
-                      >
-                        <input
-                          class="cloud-provider-input"
-                          type="checkbox"
-                          :checked="datasetForm.cloudProviders.includes(provider.key)"
-                          @change="toggleCloudProvider(provider.key)"
-                        />
-                        <span>{{ provider.label }}</span>
-                      </label>
+                    <div class="dataset-checkline">
+                      <input
+                        v-model="datasetForm.cloudStorageLink1"
+                        type="text"
+                        class="dataset-input"
+                        :placeholder="siteContent.sections.dataRelease.portal.placeholders.cloudStorageLink1"
+                        @input="resetCloudLinkCheck(0)"
+                        @blur="validateCloudLink(0)"
+                      />
+                      <button type="button" class="pill-btn pill-btn-paper dataset-check-btn" @click="validateCloudLink(0)">
+                        Check
+                      </button>
+                      <span :class="['field-check-icon', `is-${linkChecks[0].status}`]">{{ getCheckIcon(linkChecks[0].status) }}</span>
                     </div>
+                    <p v-if="linkChecks[0].message" :class="['field-check-message', `is-${linkChecks[0].status}`]">{{ linkChecks[0].message }}</p>
+                  </div>
+                </div>
+
+                <div class="dataset-form-row">
+                  <label class="dataset-form-label">{{ siteContent.sections.dataRelease.portal.fields.cloudStorageLink2 }}</label>
+                  <div class="dataset-field-stack">
+                    <div class="dataset-checkline">
+                      <input
+                        v-model="datasetForm.cloudStorageLink2"
+                        type="text"
+                        class="dataset-input"
+                        :placeholder="siteContent.sections.dataRelease.portal.placeholders.cloudStorageLink2"
+                        @input="resetCloudLinkCheck(1)"
+                        @blur="validateCloudLink(1)"
+                      />
+                      <button type="button" class="pill-btn pill-btn-paper dataset-check-btn" @click="validateCloudLink(1)">
+                        Check
+                      </button>
+                      <span :class="['field-check-icon', `is-${linkChecks[1].status}`]">{{ getCheckIcon(linkChecks[1].status) }}</span>
+                    </div>
+                    <p v-if="linkChecks[1].message" :class="['field-check-message', `is-${linkChecks[1].status}`]">{{ linkChecks[1].message }}</p>
                   </div>
                 </div>
               </section>
@@ -490,17 +759,44 @@ onBeforeUnmount(() => {
                 <h3 class="dataset-pane-title">{{ siteContent.sections.dataRelease.portal.rightTitle }}</h3>
 
                 <div class="dataset-form-row">
+                  <label class="dataset-form-label required">{{ siteContent.sections.dataRelease.portal.fields.userEmail }}</label>
+                  <div class="dataset-field-stack">
+                    <div class="dataset-checkline">
+                      <input
+                        v-model="datasetForm.userEmail"
+                        type="email"
+                        class="dataset-input"
+                        :placeholder="siteContent.sections.dataRelease.portal.placeholders.userEmail"
+                        @input="resetEmailCheck"
+                        @blur="validateUserEmail"
+                      />
+                      <button type="button" class="pill-btn pill-btn-paper dataset-check-btn" @click="validateUserEmail">
+                        Check
+                      </button>
+                      <span :class="['field-check-icon', `is-${emailCheck.status}`]">{{ getCheckIcon(emailCheck.status) }}</span>
+                    </div>
+                    <p v-if="emailCheck.message" :class="['field-check-message', `is-${emailCheck.status}`]">{{ emailCheck.message }}</p>
+                  </div>
+                </div>
+
+                <div class="dataset-form-row">
                   <label class="dataset-form-label required">{{ siteContent.sections.dataRelease.portal.fields.usageLicense }}</label>
-                  <select v-model="datasetForm.usageLicense" class="dataset-input dataset-select">
-                    <option value="" disabled>Select (e.g. CC-BY, MIT, etc.)</option>
-                    <option
-                      v-for="license in siteContent.sections.dataRelease.portal.licenseOptions"
-                      :key="license"
-                      :value="license"
-                    >
-                      {{ license }}
-                    </option>
-                  </select>
+                  <div class="dataset-field-stack">
+                    <input
+                      v-model="datasetForm.usageLicense"
+                      type="text"
+                      class="dataset-input"
+                      list="dataset-license-options"
+                      placeholder="Select or type a license"
+                    />
+                    <datalist id="dataset-license-options">
+                      <option
+                        v-for="license in siteContent.sections.dataRelease.portal.licenseOptions"
+                        :key="license"
+                        :value="license"
+                      />
+                    </datalist>
+                  </div>
                 </div>
 
                 <div class="dataset-form-row">
@@ -516,14 +812,32 @@ onBeforeUnmount(() => {
                 <div class="dataset-form-row">
                   <label class="dataset-form-label required">{{ siteContent.sections.dataRelease.portal.fields.uploadCoverImage }}</label>
                   <div class="dataset-upload-box">
-                    <button type="button" class="pill-btn dataset-upload-btn" @click="triggerCoverUpload">
-                      {{ siteContent.sections.dataRelease.portal.uploadButtonText }}
-                    </button>
+                    <div v-if="datasetForm.coverImagePreview" class="dataset-upload-preview-wrap">
+                      <img :src="datasetForm.coverImagePreview" alt="Uploaded preview" class="dataset-upload-preview" />
+                    </div>
+                    <div class="dataset-upload-actions">
+                      <button
+                        v-if="!datasetForm.coverImagePreview"
+                        type="button"
+                        class="pill-btn dataset-upload-btn"
+                        @click="triggerCoverUpload"
+                      >
+                        {{ siteContent.sections.dataRelease.portal.uploadButtonText }}
+                      </button>
+                      <button
+                        v-else
+                        type="button"
+                        class="pill-btn pill-btn-paper dataset-upload-btn"
+                        @click="triggerCoverUpload"
+                      >
+                        {{ siteContent.sections.dataRelease.portal.reuploadButtonText }}
+                      </button>
+                    </div>
                     <input
                       ref="coverInputRef"
                       class="dataset-upload-input"
                       type="file"
-                      accept=".jpg,.jpeg,.png"
+                      accept=".jpg,.jpeg,.png,.gif,.bmp,.tiff,.tif"
                       @change="handleCoverChange"
                     />
                     <p class="dataset-upload-hint">
@@ -534,7 +848,14 @@ onBeforeUnmount(() => {
               </section>
             </div>
 
-            <button type="submit" class="pill-btn pill-btn-paper dataset-submit-btn">{{ siteContent.sections.dataRelease.portal.submitText }}</button>
+            <div class="dataset-submit-actions">
+              <button type="button" class="pill-btn dataset-reset-btn" @click="resetDatasetForm">
+                {{ siteContent.sections.dataRelease.portal.resetText }}
+              </button>
+              <button type="submit" class="pill-btn pill-btn-paper dataset-submit-btn">
+                {{ siteContent.sections.dataRelease.portal.submitText }}
+              </button>
+            </div>
             <p class="dataset-submit-note">{{ siteContent.sections.dataRelease.portal.submitNote }}</p>
           </form>
         </div>
@@ -585,6 +906,7 @@ onBeforeUnmount(() => {
 <style scoped>
 :global(html) {
   zoom: 1.25;
+  scrollbar-gutter: stable both-edges;
 }
 
 :global(*) {
@@ -604,6 +926,7 @@ onBeforeUnmount(() => {
 :global(body.modal-scroll-lock) {
   overflow: hidden;
   overscroll-behavior: none;
+  padding-right: var(--scrollbar-lock-offset, 0px);
 }
 
 .app-root {
@@ -759,9 +1082,10 @@ onBeforeUnmount(() => {
 .media-image {
   width: 100%;
   display: block;
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: 0;
-  background: transparent;
+  background: transparent !important;
+  mix-blend-mode: multiply;
   object-fit: contain;
   height: auto;
   max-height: 460px;
@@ -954,6 +1278,10 @@ onBeforeUnmount(() => {
 }
 
 .dataset-card {
+  /* Enhancement behavior dataset.svg: 238x79，右侧主体明显更宽 */
+  --dataset-main-left-col: 44%;
+  --dataset-main-right-col: 56%;
+  --dataset-meta-shift-x: -20px;
   background: transparent;
   border: 0;
   border-radius: 0;
@@ -976,17 +1304,30 @@ onBeforeUnmount(() => {
 .dataset-label-row {
   margin-top: 6px;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, var(--dataset-main-left-col)) minmax(0, var(--dataset-main-right-col));
+  column-gap: clamp(8px, 1.1vw, 14px);
   color: #4f5d73;
   font-size: clamp(12px, 0.95vw, 16px);
   text-align: center;
+  transform: translateX(var(--dataset-meta-shift-x));
 }
 
 .dataset-btn-row {
   margin-top: 8px;
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  grid-template-columns: minmax(0, var(--dataset-main-left-col)) minmax(0, var(--dataset-main-right-col));
+  column-gap: clamp(8px, 1.1vw, 14px);
+  transform: translateX(var(--dataset-meta-shift-x));
+}
+
+.dataset-label-row span,
+.dataset-btn-row .pill-btn {
+  width: 100%;
+}
+
+.dataset-label-row span:nth-child(2),
+.dataset-btn-row .pill-btn:nth-child(2) {
+  transform: translateX(20px);
 }
 
 .tutorial-layout {
@@ -1077,18 +1418,18 @@ onBeforeUnmount(() => {
   background: rgba(23, 43, 74, 0.38);
   display: grid;
   place-items: center;
-  padding: 20px;
+  padding: 22px;
 }
 
 .dataset-submit-card {
-  width: min(980px, 96vw);
-  max-height: 90vh;
+  width: min(760px, 78vw);
+  max-height: min(760px, 82vh);
   overflow: auto;
   border-radius: 18px;
   border: 1px solid rgba(117, 152, 206, 0.4);
   background: linear-gradient(180deg, rgba(243, 248, 255, 0.96), rgba(236, 244, 255, 0.95));
   box-shadow: 0 24px 54px rgba(16, 37, 71, 0.28);
-  padding: 22px 26px 18px;
+  padding: 18px 20px 16px;
 }
 
 .dataset-submit-title {
@@ -1135,7 +1476,7 @@ onBeforeUnmount(() => {
 .dataset-submit-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 14px;
+  gap: 12px;
 }
 
 .dataset-pane {
@@ -1147,17 +1488,17 @@ onBeforeUnmount(() => {
 
 .dataset-pane-title {
   margin: 0 0 10px;
-  font-size: 24px;
+  font-size: 20px;
   font-weight: 800;
   color: #244273;
 }
 
 .dataset-form-row {
   display: grid;
-  grid-template-columns: 145px 1fr;
+  grid-template-columns: 150px 1fr;
   align-items: start;
-  gap: 8px;
-  margin-bottom: 10px;
+  gap: 10px;
+  margin-bottom: 12px;
 }
 
 .dataset-form-label {
@@ -1209,35 +1550,68 @@ onBeforeUnmount(() => {
   gap: 8px;
 }
 
-.cloud-provider-list {
-  display: flex;
-  flex-wrap: wrap;
+.dataset-checkline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 22px;
+  align-items: center;
   gap: 8px;
 }
 
-.cloud-provider-chip {
-  border: 1px solid rgba(134, 164, 208, 0.58);
-  border-radius: 999px;
-  background: rgba(235, 244, 255, 0.92);
-  color: #29528f;
+.dataset-check-btn {
+  min-height: 36px;
+  min-width: 84px;
+  padding: 0 12px;
   font-size: 13px;
-  font-weight: 700;
-  line-height: 1;
-  padding: 7px 12px;
-  cursor: pointer;
-  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
 }
 
-.cloud-provider-chip.active {
-  background: rgba(53, 114, 203, 0.16);
-  border-color: #4c7fc8;
-  color: #1b447d;
+.field-check-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid rgba(123, 146, 182, 0.4);
+  font-size: 12px;
+  font-weight: 900;
+  color: #6f8099;
+  background: rgba(255, 255, 255, 0.8);
 }
 
-.cloud-provider-input {
-  position: absolute;
-  opacity: 0;
-  pointer-events: none;
+.field-check-icon.is-valid {
+  color: #1f7a35;
+  border-color: rgba(38, 146, 69, 0.5);
+  background: rgba(224, 246, 228, 0.9);
+}
+
+.field-check-icon.is-invalid {
+  color: #a12e2e;
+  border-color: rgba(190, 73, 73, 0.5);
+  background: rgba(253, 231, 231, 0.9);
+}
+
+.field-check-icon.is-checking {
+  color: #38558a;
+  border-color: rgba(80, 121, 186, 0.5);
+  background: rgba(232, 241, 255, 0.9);
+}
+
+.field-check-message {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.35;
+  color: #556882;
+}
+
+.field-check-message.is-valid {
+  color: #1f7a35;
+}
+
+.field-check-message.is-invalid {
+  color: #a12e2e;
+}
+
+.field-check-message.is-checking {
+  color: #38558a;
 }
 
 .dataset-upload-box {
@@ -1245,6 +1619,26 @@ onBeforeUnmount(() => {
   border-radius: 10px;
   background: rgba(246, 250, 255, 0.95);
   padding: 10px;
+}
+
+.dataset-upload-preview-wrap {
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.dataset-upload-preview {
+  width: 100%;
+  max-height: 180px;
+  display: block;
+  object-fit: contain;
+  border: 1px solid rgba(151, 176, 213, 0.52);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.dataset-upload-actions {
+  display: flex;
+  align-items: center;
 }
 
 .dataset-upload-btn {
@@ -1263,16 +1657,26 @@ onBeforeUnmount(() => {
   color: #4c6289;
 }
 
+.dataset-submit-actions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+}
+
+.dataset-reset-btn {
+  min-width: 132px;
+  font-size: 16px;
+}
+
 .dataset-submit-btn {
-  align-self: center;
-  min-width: 230px;
-  font-size: 20px;
+  min-width: 180px;
+  font-size: 18px;
 }
 
 .dataset-submit-note {
   margin: 0;
   text-align: center;
-  font-size: 18px;
+  font-size: 15px;
   color: #32476b;
 }
 
@@ -1501,12 +1905,17 @@ onBeforeUnmount(() => {
     max-width: 100%;
   }
 
+  .dataset-label-row,
+  .dataset-btn-row {
+    transform: none;
+  }
+
   .video-grid-top {
     flex-direction: column;
   }
 
   .dataset-submit-card {
-    width: min(980px, 98vw);
+    width: min(760px, 96vw);
     padding: 18px 14px 14px;
   }
 
@@ -1523,6 +1932,23 @@ onBeforeUnmount(() => {
 
   .dataset-form-label {
     padding-top: 0;
+  }
+
+  .dataset-checkline {
+    grid-template-columns: minmax(0, 1fr) auto 20px;
+  }
+
+  .dataset-check-btn {
+    min-width: 72px;
+    min-height: 34px;
+    font-size: 12px;
+    padding: 0 10px;
+  }
+
+  .field-check-icon {
+    width: 20px;
+    height: 20px;
+    font-size: 11px;
   }
 }
 
