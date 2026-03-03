@@ -1,17 +1,24 @@
 ﻿<script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { siteContent } from './config/siteContent'
+import { buildContactMailPayload, buildDatasetMailPayload, resolveMailFailureAlert, submissionMailConfig } from './config/submissionMailConfig'
 import { getNavAction, getVideoPlaybackMode } from './utils/navigation'
 import { extractAnchorFromHash, resolveMediaSrc } from './utils/mediaResolver'
+import { sendSubmissionMail } from './utils/submissionMailer'
 
 const comingSoonVisible = ref(false)
 const comingSoonMessage = ref(siteContent.meta.comingSoonMessage || '正在开发中')
 const datasetSubmissionVisible = ref(false)
+const datasetValidationVisible = ref(false)
+const datasetValidationTitle = ref(submissionMailConfig.messages.validationTitle)
+const datasetValidationDescription = ref(submissionMailConfig.messages.validationDescription)
+const datasetValidationErrors = ref([])
 const contactModalVisible = ref(false)
 const coverInputRef = ref(null)
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
 const URL_TOKEN_PATTERN = /https?:\/\/[^\s]+/gi
 const LINK_FIELD_KEYS = ['cloudStorageLink1', 'cloudStorageLink2']
+const MANUAL_INPUT_VALUE = '__manual_input__'
 const DNS_TIMEOUT_MS = 5000
 const URL_TIMEOUT_MS = 6000
 
@@ -27,6 +34,7 @@ function createEmptyDatasetForm() {
     userEmail: '',
     coverImageName: '',
     coverImagePreview: '',
+    coverImageDataUrl: '',
   }
 }
 
@@ -34,10 +42,33 @@ function createCheckState(status = 'idle', message = '') {
   return { status, message }
 }
 
+function createDatasetFieldChecks() {
+  return {
+    datasetName: createCheckState(),
+    shortDescription: createCheckState(),
+    dataFormatScale: createCheckState(),
+    cloudStorageLinks: createCheckState(),
+    usageLicense: createCheckState(),
+    citationMethod: createCheckState(),
+    coverImage: createCheckState(),
+  }
+}
+
 const datasetForm = ref(createEmptyDatasetForm())
+const datasetFieldChecks = ref(createDatasetFieldChecks())
 const emailCheck = ref(createCheckState())
 const linkChecks = ref(LINK_FIELD_KEYS.map(() => createCheckState()))
+const dataFormatSelection = ref('')
+const usageLicenseSelection = ref('')
+const datasetSubmitting = ref(false)
+const contactSubmitting = ref(false)
+const contactEmailCheck = ref(createCheckState())
+const contactFieldChecks = ref({
+  subject: createCheckState(),
+  content: createCheckState(),
+})
 const contactForm = ref({
+  userEmail: '',
   subject: '',
   content: '',
 })
@@ -54,16 +85,6 @@ function setBodyScrollLock(locked) {
   }
   const body = document.body
   body.classList.toggle(BODY_LOCK_CLASS, locked)
-
-  if (!locked) {
-    body.style.removeProperty('--scrollbar-lock-offset')
-    body.style.removeProperty('padding-right')
-    return
-  }
-
-  const scrollbarWidth = Math.max(0, window.innerWidth - document.documentElement.clientWidth)
-  body.style.setProperty('--scrollbar-lock-offset', `${scrollbarWidth}px`)
-  body.style.paddingRight = `${scrollbarWidth}px`
 }
 
 function resolveComingSoonMessage(messageKey) {
@@ -71,9 +92,13 @@ function resolveComingSoonMessage(messageKey) {
   return messageMap[messageKey] || messageMap.default || siteContent.meta.comingSoonMessage || '正在开发中'
 }
 
-function openComingSoon(messageKey = 'default') {
-  comingSoonMessage.value = resolveComingSoonMessage(messageKey)
+function openNotice(message) {
+  comingSoonMessage.value = message
   comingSoonVisible.value = true
+}
+
+function openComingSoon(messageKey = 'default') {
+  openNotice(resolveComingSoonMessage(messageKey))
 }
 
 function closeComingSoon() {
@@ -86,6 +111,23 @@ function openDatasetSubmissionModal() {
 
 function closeDatasetSubmissionModal() {
   datasetSubmissionVisible.value = false
+}
+
+function openDatasetValidationAlert(errors, title = submissionMailConfig.messages.validationTitle, description = submissionMailConfig.messages.validationDescription) {
+  datasetValidationTitle.value = title
+  datasetValidationDescription.value = description
+  datasetValidationErrors.value = [...new Set(errors.filter(Boolean))]
+  datasetValidationVisible.value = true
+}
+
+function openMailFailureAlert(sendResult, submitType) {
+  const alertPayload = resolveMailFailureAlert(sendResult, submitType)
+  openDatasetValidationAlert(alertPayload.errors, alertPayload.title, alertPayload.description)
+}
+
+function closeDatasetValidationAlert() {
+  datasetValidationVisible.value = false
+  datasetValidationErrors.value = []
 }
 
 function triggerCoverUpload() {
@@ -105,20 +147,81 @@ function handleCoverChange(event) {
   if (!file) {
     datasetForm.value.coverImageName = ''
     datasetForm.value.coverImagePreview = ''
+    datasetForm.value.coverImageDataUrl = ''
+    validateCoverImage()
     return
   }
-  datasetForm.value.coverImageName = file.name
-  datasetForm.value.coverImagePreview = URL.createObjectURL(file)
+  const reader = new FileReader()
+  reader.onload = () => {
+    datasetForm.value.coverImageName = file.name
+    datasetForm.value.coverImagePreview = URL.createObjectURL(file)
+    datasetForm.value.coverImageDataUrl = typeof reader.result === 'string' ? reader.result : ''
+    validateCoverImage()
+  }
+  reader.onerror = () => {
+    datasetForm.value.coverImageName = file.name
+    datasetForm.value.coverImagePreview = URL.createObjectURL(file)
+    datasetForm.value.coverImageDataUrl = ''
+    validateCoverImage()
+  }
+  reader.readAsDataURL(file)
 }
 
 function resetDatasetForm() {
   revokeCoverPreview()
   datasetForm.value = createEmptyDatasetForm()
+  datasetFieldChecks.value = createDatasetFieldChecks()
   emailCheck.value = createCheckState()
   linkChecks.value = LINK_FIELD_KEYS.map(() => createCheckState())
+  dataFormatSelection.value = ''
+  usageLicenseSelection.value = ''
+  closeDatasetValidationAlert()
   if (coverInputRef.value) {
     coverInputRef.value.value = ''
   }
+}
+
+function resetContactForm() {
+  contactForm.value = {
+    userEmail: '',
+    subject: '',
+    content: '',
+  }
+  contactEmailCheck.value = createCheckState()
+  contactFieldChecks.value = {
+    subject: createCheckState(),
+    content: createCheckState(),
+  }
+}
+
+function setDatasetFieldCheck(fieldKey, status, message = '') {
+  datasetFieldChecks.value = {
+    ...datasetFieldChecks.value,
+    [fieldKey]: createCheckState(status, message),
+  }
+}
+
+function resetDatasetFieldCheck(fieldKey) {
+  setDatasetFieldCheck(fieldKey, 'idle', '')
+}
+
+function validateRequiredTextField(fieldKey, label) {
+  const value = datasetForm.value[fieldKey]?.trim() || ''
+  if (!value) {
+    setDatasetFieldCheck(fieldKey, 'invalid', `${label} is required.`)
+    return false
+  }
+  setDatasetFieldCheck(fieldKey, 'valid', '')
+  return true
+}
+
+function validateCoverImage() {
+  if (!datasetForm.value.coverImagePreview) {
+    setDatasetFieldCheck('coverImage', 'invalid', 'Please upload one cover image.')
+    return false
+  }
+  setDatasetFieldCheck('coverImage', 'valid', '')
+  return true
 }
 
 function getCheckIcon(status) {
@@ -138,6 +241,63 @@ function resetEmailCheck() {
   emailCheck.value = createCheckState()
 }
 
+function resetContactEmailCheck() {
+  contactEmailCheck.value = createCheckState()
+}
+
+function setContactFieldCheck(fieldKey, status, message = '') {
+  contactFieldChecks.value = {
+    ...contactFieldChecks.value,
+    [fieldKey]: createCheckState(status, message),
+  }
+}
+
+function resetContactFieldCheck(fieldKey) {
+  setContactFieldCheck(fieldKey, 'idle', '')
+}
+
+function validateContactRequiredField(fieldKey, label) {
+  const value = contactForm.value[fieldKey]?.trim() || ''
+  if (!value) {
+    setContactFieldCheck(fieldKey, 'invalid', `${label} is required.`)
+    return false
+  }
+  setContactFieldCheck(fieldKey, 'valid', '')
+  return true
+}
+
+function handleDataFormatSelectionChange() {
+  if (!dataFormatSelection.value) {
+    datasetForm.value.dataFormatScale = ''
+    resetDatasetFieldCheck('dataFormatScale')
+    return
+  }
+  if (dataFormatSelection.value === MANUAL_INPUT_VALUE) {
+    datasetForm.value.dataFormatScale = ''
+    setDatasetFieldCheck('dataFormatScale', 'invalid', 'Data Format & Scale is required.')
+    return
+  }
+
+  datasetForm.value.dataFormatScale = dataFormatSelection.value
+  validateRequiredTextField('dataFormatScale', 'Data Format & Scale')
+}
+
+function handleUsageLicenseSelectionChange() {
+  if (!usageLicenseSelection.value) {
+    datasetForm.value.usageLicense = ''
+    resetDatasetFieldCheck('usageLicense')
+    return
+  }
+  if (usageLicenseSelection.value === MANUAL_INPUT_VALUE) {
+    datasetForm.value.usageLicense = ''
+    setDatasetFieldCheck('usageLicense', 'invalid', 'Usage License is required.')
+    return
+  }
+
+  datasetForm.value.usageLicense = usageLicenseSelection.value
+  validateRequiredTextField('usageLicense', 'Usage License')
+}
+
 function setLinkCheck(index, status, message = '') {
   linkChecks.value = linkChecks.value.map((item, currentIndex) => {
     if (currentIndex !== index) {
@@ -149,6 +309,40 @@ function setLinkCheck(index, status, message = '') {
 
 function resetCloudLinkCheck(index) {
   setLinkCheck(index, 'idle', '')
+  resetDatasetFieldCheck('cloudStorageLinks')
+}
+
+function evaluateCloudLinksGroupCheck() {
+  const populatedIndexes = LINK_FIELD_KEYS
+    .map((key, index) => ({ key, index }))
+    .filter(({ key }) => Boolean(datasetForm.value[key].trim()))
+    .map(({ index }) => index)
+
+  if (!populatedIndexes.length) {
+    setDatasetFieldCheck('cloudStorageLinks', 'invalid', 'At least one cloud storage link is required.')
+    return false
+  }
+
+  const hasInvalid = populatedIndexes.some((index) => linkChecks.value[index].status === 'invalid')
+  if (hasInvalid) {
+    setDatasetFieldCheck('cloudStorageLinks', 'invalid', 'Please fix invalid cloud storage link(s).')
+    return false
+  }
+
+  const hasChecking = populatedIndexes.some((index) => linkChecks.value[index].status === 'checking')
+  if (hasChecking) {
+    setDatasetFieldCheck('cloudStorageLinks', 'checking', 'Checking cloud storage link(s)...')
+    return false
+  }
+
+  const allValid = populatedIndexes.every((index) => linkChecks.value[index].status === 'valid')
+  if (allValid) {
+    setDatasetFieldCheck('cloudStorageLinks', 'valid', '')
+    return true
+  }
+
+  setDatasetFieldCheck('cloudStorageLinks', 'idle', '')
+  return true
 }
 
 function validateSingleLinkFormat(rawValue) {
@@ -209,27 +403,61 @@ async function validateCloudLink(index) {
   const currentValue = datasetForm.value[fieldKey]
   if (!currentValue.trim()) {
     setLinkCheck(index, 'idle', '')
-    return
+    return true
   }
 
   const formatResult = validateSingleLinkFormat(currentValue)
   if (!formatResult.ok) {
     setLinkCheck(index, 'invalid', formatResult.reason)
-    return
+    return false
   }
 
   setLinkCheck(index, 'checking', 'Checking URL reachability...')
   const reachability = await checkUrlReachability(formatResult.normalizedUrl)
   if (datasetForm.value[fieldKey] !== currentValue) {
-    return
+    return false
   }
 
   if (reachability.ok) {
     datasetForm.value[fieldKey] = formatResult.normalizedUrl
     setLinkCheck(index, 'valid', reachability.reason)
-    return
+    return true
   }
   setLinkCheck(index, 'invalid', reachability.reason)
+  return false
+}
+
+async function handleCloudLinkBlur(index) {
+  await validateCloudLink(index)
+  evaluateCloudLinksGroupCheck()
+}
+
+async function handleCloudLinkCheck(index) {
+  await validateCloudLink(index)
+  evaluateCloudLinksGroupCheck()
+}
+
+async function validateCloudLinksBeforeSubmit() {
+  const populatedIndexes = LINK_FIELD_KEYS
+    .map((key, index) => ({ key, index }))
+    .filter(({ key }) => Boolean(datasetForm.value[key].trim()))
+    .map(({ index }) => index)
+
+  if (!populatedIndexes.length) {
+    setDatasetFieldCheck('cloudStorageLinks', 'invalid', 'At least one cloud storage link is required.')
+    return false
+  }
+
+  const results = await Promise.all(populatedIndexes.map((index) => validateCloudLink(index)))
+  const allPassed = results.every(Boolean)
+
+  if (!allPassed) {
+    setDatasetFieldCheck('cloudStorageLinks', 'invalid', 'Please fix invalid cloud storage link(s).')
+    return false
+  }
+
+  setDatasetFieldCheck('cloudStorageLinks', 'valid', '')
+  return true
 }
 
 async function queryDnsRecord(domain, recordType) {
@@ -272,60 +500,146 @@ async function queryDnsRecord(domain, recordType) {
   return { ok: false, providerReached: true, reason: '' }
 }
 
-async function validateUserEmail() {
-  const currentValue = datasetForm.value.userEmail.trim()
+async function validateEmailAddress(currentValue, required, requiredMessage) {
   if (!currentValue) {
-    emailCheck.value = createCheckState('idle', '')
-    return
+    if (required) {
+      return createCheckState('invalid', requiredMessage)
+    }
+    return createCheckState('idle', '')
   }
+
   if (!EMAIL_PATTERN.test(currentValue)) {
-    emailCheck.value = createCheckState('invalid', 'Invalid email format.')
-    return
+    return createCheckState('invalid', 'Invalid email format.')
   }
 
   const domain = currentValue.split('@').at(-1)?.toLowerCase() || ''
   if (!domain || domain.startsWith('.') || domain.endsWith('.') || domain.includes('..')) {
-    emailCheck.value = createCheckState('invalid', 'Invalid email domain format.')
-    return
+    return createCheckState('invalid', 'Invalid email domain format.')
   }
-
-  emailCheck.value = createCheckState('checking', 'Checking email domain reachability...')
 
   const mxResult = await queryDnsRecord(domain, 'MX')
-  if (datasetForm.value.userEmail.trim() !== currentValue) {
-    return
-  }
   if (mxResult.ok) {
-    emailCheck.value = createCheckState('valid', 'Email format and domain check passed.')
-    return
+    return createCheckState('valid', 'Email format and domain check passed.')
   }
   if (mxResult.reason === 'Email domain does not exist.') {
-    emailCheck.value = createCheckState('invalid', mxResult.reason)
-    return
+    return createCheckState('invalid', mxResult.reason)
   }
 
   const aResult = await queryDnsRecord(domain, 'A')
-  if (datasetForm.value.userEmail.trim() !== currentValue) {
-    return
-  }
   if (aResult.ok) {
-    emailCheck.value = createCheckState('valid', 'Domain is reachable (A record found).')
-    return
+    return createCheckState('valid', 'Domain is reachable (A record found).')
   }
 
   if (!mxResult.providerReached && !aResult.providerReached) {
-    emailCheck.value = createCheckState('invalid', 'Email domain reachability check failed.')
-    return
+    return createCheckState('invalid', 'Email domain reachability check failed.')
   }
-  emailCheck.value = createCheckState('invalid', 'No MX/A DNS record found for this domain.')
+  return createCheckState('invalid', 'No MX/A DNS record found for this domain.')
 }
 
-function submitDatasetSubmission() {
+async function validateUserEmail(required = true) {
+  const currentValue = datasetForm.value.userEmail.trim()
+  if (!currentValue && !required) {
+    emailCheck.value = createCheckState('idle', '')
+    return true
+  }
+
+  emailCheck.value = createCheckState('checking', 'Checking email domain reachability...')
+  const result = await validateEmailAddress(currentValue, required, 'User Email is required.')
+  if (datasetForm.value.userEmail.trim() !== currentValue) {
+    return false
+  }
+  emailCheck.value = result
+  return result.status === 'valid'
+}
+
+async function validateContactEmail(required = true) {
+  const currentValue = contactForm.value.userEmail.trim()
+  if (!currentValue && !required) {
+    contactEmailCheck.value = createCheckState('idle', '')
+    return true
+  }
+
+  contactEmailCheck.value = createCheckState('checking', 'Checking email domain reachability...')
+  const result = await validateEmailAddress(currentValue, required, 'Your Email is required.')
+  if (contactForm.value.userEmail.trim() !== currentValue) {
+    return false
+  }
+  contactEmailCheck.value = result
+  return result.status === 'valid'
+}
+
+async function submitDatasetSubmission() {
+  if (datasetSubmitting.value) {
+    return
+  }
+
+  const submitErrors = []
+
+  if (!validateRequiredTextField('datasetName', 'Dataset Name')) {
+    submitErrors.push(datasetFieldChecks.value.datasetName.message)
+  }
+  if (!validateRequiredTextField('shortDescription', 'Short Description')) {
+    submitErrors.push(datasetFieldChecks.value.shortDescription.message)
+  }
+  if (!validateRequiredTextField('dataFormatScale', 'Data Format & Scale')) {
+    submitErrors.push(datasetFieldChecks.value.dataFormatScale.message)
+  }
+  if (!validateRequiredTextField('usageLicense', 'Usage License')) {
+    submitErrors.push(datasetFieldChecks.value.usageLicense.message)
+  }
+  if (!validateRequiredTextField('citationMethod', 'Citation Method')) {
+    submitErrors.push(datasetFieldChecks.value.citationMethod.message)
+  }
+
+  const emailPassed = await validateUserEmail(true)
+  if (!emailPassed) {
+    submitErrors.push(emailCheck.value.message || 'User Email check failed.')
+  }
+
+  const linksPassed = await validateCloudLinksBeforeSubmit()
+  if (!linksPassed) {
+    submitErrors.push(datasetFieldChecks.value.cloudStorageLinks.message || 'Cloud storage link check failed.')
+  }
+
+  if (!validateCoverImage()) {
+    submitErrors.push(datasetFieldChecks.value.coverImage.message)
+  }
+
+  if (submitErrors.length) {
+    openDatasetValidationAlert(submitErrors)
+    return
+  }
+
+  datasetSubmitting.value = true
+  const mailPayload = buildDatasetMailPayload({
+    ...datasetForm.value,
+    userEmail: datasetForm.value.userEmail.trim(),
+  })
+  const sendResult = await sendSubmissionMail({
+    userEmail: datasetForm.value.userEmail.trim(),
+    submitType: 'dataset_submission',
+    subject: mailPayload.subject,
+    html: mailPayload.html,
+    text: mailPayload.text,
+  })
+  datasetSubmitting.value = false
+
+  if (!sendResult.ok) {
+    openMailFailureAlert(sendResult, 'dataset_submission')
+    return
+  }
+
   closeDatasetSubmissionModal()
-  openComingSoon('dataset_submission_submit')
+  resetDatasetForm()
+  openNotice(submissionMailConfig.messages.datasetSuccess)
 }
 
 function openContactModal() {
+  resetContactEmailCheck()
+  contactFieldChecks.value = {
+    subject: createCheckState(),
+    content: createCheckState(),
+  }
   contactModalVisible.value = true
 }
 
@@ -333,15 +647,62 @@ function closeContactModal() {
   contactModalVisible.value = false
 }
 
-function submitContactForm() {
+async function submitContactForm() {
+  if (contactSubmitting.value) {
+    return
+  }
+
+  const submitErrors = []
+
+  if (!validateContactRequiredField('subject', 'Title')) {
+    submitErrors.push(contactFieldChecks.value.subject.message)
+  }
+  if (!validateContactRequiredField('content', 'Content')) {
+    submitErrors.push(contactFieldChecks.value.content.message)
+  }
+
+  const emailPassed = await validateContactEmail(true)
+  if (!emailPassed) {
+    submitErrors.push(contactEmailCheck.value.message || 'Email check failed.')
+  }
+
+  if (submitErrors.length) {
+    openDatasetValidationAlert(
+      submitErrors,
+      submissionMailConfig.messages.validationTitle,
+      submissionMailConfig.messages.contactValidationDescription,
+    )
+    return
+  }
+
+  contactSubmitting.value = true
+  const mailPayload = buildContactMailPayload({
+    ...contactForm.value,
+    userEmail: contactForm.value.userEmail.trim(),
+  })
+  const sendResult = await sendSubmissionMail({
+    userEmail: contactForm.value.userEmail.trim(),
+    submitType: 'contact_submission',
+    subject: mailPayload.subject,
+    html: mailPayload.html,
+    text: mailPayload.text,
+  })
+  contactSubmitting.value = false
+
+  if (!sendResult.ok) {
+    openMailFailureAlert(sendResult, 'contact_submission')
+    return
+  }
+
   closeContactModal()
-  openComingSoon('contact_submit')
+  resetContactForm()
+  openNotice(submissionMailConfig.messages.contactSuccess)
 }
 
 watch(
-  [comingSoonVisible, datasetSubmissionVisible, contactModalVisible],
-  ([comingSoon, datasetSubmission, contact]) => {
-    setBodyScrollLock(comingSoon || datasetSubmission || contact)
+  [comingSoonVisible, datasetSubmissionVisible, datasetValidationVisible, contactModalVisible],
+  ([comingSoon, datasetSubmission, datasetValidation, contact]) => {
+    setBodyScrollLock(comingSoon || datasetSubmission || datasetValidation || contact)
   },
 )
 
@@ -583,7 +944,7 @@ onBeforeUnmount(() => {
       <section :id="siteContent.sections.dataset.id" class="shell block-section anchor-block">
         <h2 class="section-title"><span class="title-mark">◼</span>{{ siteContent.sections.dataset.title }}</h2>
         <div class="dataset-layout">
-          <div class="dataset-text">
+          <div class="dataset-text text-rect">
             <p v-for="(line, index) in siteContent.sections.dataset.lines" :key="`dataset-line-${index}`">{{ line }}</p>
           </div>
 
@@ -615,7 +976,7 @@ onBeforeUnmount(() => {
 
       <section class="shell block-section">
         <h2 class="section-title"><span class="title-mark">◼</span>{{ siteContent.sections.extensibility.title }}</h2>
-        <div class="intro-lines">
+        <div class="intro-lines text-rect">
           <p v-for="(line, index) in siteContent.sections.extensibility.introLines" :key="`ext-line-${index}`">{{ line }}</p>
         </div>
 
@@ -652,7 +1013,7 @@ onBeforeUnmount(() => {
       <section class="shell block-section">
         <h2 class="section-title"><span class="title-mark">◼</span>{{ siteContent.sections.tutorial.title }}</h2>
         <div class="tutorial-layout">
-          <div class="tutorial-list">
+          <div class="tutorial-list text-rect">
             <p v-for="(item, index) in siteContent.sections.tutorial.bullets" :key="`tutorial-${index}`">➢ {{ item }}</p>
           </div>
           <div class="tutorial-media">
@@ -674,7 +1035,7 @@ onBeforeUnmount(() => {
 
       <section class="shell block-section">
         <h2 class="section-title"><span class="title-mark">◼</span>{{ siteContent.sections.dataRelease.title }}</h2>
-        <div class="intro-lines">
+        <div class="intro-lines text-rect">
           <p v-for="(line, index) in siteContent.sections.dataRelease.lines" :key="`release-line-${index}`">{{ line }}</p>
         </div>
         <button
@@ -688,7 +1049,7 @@ onBeforeUnmount(() => {
 
       <section :id="siteContent.sections.competition.id" class="shell block-section anchor-block">
         <h2 class="section-title"><span class="title-mark">◼</span>{{ siteContent.sections.competition.title }}</h2>
-        <div class="intro-lines">
+        <div class="intro-lines text-rect">
           <p v-for="(line, index) in siteContent.sections.competition.lines" :key="`competition-line-${index}`">{{ line }}</p>
         </div>
         <button
@@ -702,7 +1063,7 @@ onBeforeUnmount(() => {
 
       <section :id="siteContent.sections.declaration.id" class="shell block-section anchor-block">
         <h2 class="section-title"><span class="title-mark">◼</span>{{ siteContent.sections.declaration.title }}</h2>
-        <p class="declaration-text">
+        <p class="declaration-text text-rect">
           {{ siteContent.sections.declaration.paragraph }}
           <button type="button" class="contact-inline-link" @click="openContactModal">
             {{ siteContent.sections.declaration.contactText }}
@@ -748,46 +1109,84 @@ onBeforeUnmount(() => {
 
                 <div class="dataset-form-row">
                   <label class="dataset-form-label required">{{ siteContent.sections.dataRelease.portal.fields.datasetName }}</label>
-                  <input
-                    v-model="datasetForm.datasetName"
-                    type="text"
-                    class="dataset-input"
-                    :placeholder="siteContent.sections.dataRelease.portal.placeholders.datasetName"
-                  />
+                  <div class="dataset-field-stack">
+                    <input
+                      v-model="datasetForm.datasetName"
+                      type="text"
+                      class="dataset-input"
+                      :placeholder="siteContent.sections.dataRelease.portal.placeholders.datasetName"
+                      @input="resetDatasetFieldCheck('datasetName')"
+                      @blur="validateRequiredTextField('datasetName', 'Dataset Name')"
+                    />
+                    <p
+                      v-if="datasetFieldChecks.datasetName.message"
+                      :class="['field-check-message', `is-${datasetFieldChecks.datasetName.status}`]"
+                    >
+                      {{ datasetFieldChecks.datasetName.message }}
+                    </p>
+                  </div>
                 </div>
 
                 <div class="dataset-form-row">
                   <label class="dataset-form-label required">{{ siteContent.sections.dataRelease.portal.fields.shortDescription }}</label>
-                  <textarea
-                    v-model="datasetForm.shortDescription"
-                    class="dataset-textarea"
-                    rows="3"
-                    :placeholder="siteContent.sections.dataRelease.portal.placeholders.shortDescription"
-                  />
+                  <div class="dataset-field-stack">
+                    <textarea
+                      v-model="datasetForm.shortDescription"
+                      class="dataset-textarea"
+                      rows="3"
+                      :placeholder="siteContent.sections.dataRelease.portal.placeholders.shortDescription"
+                      @input="resetDatasetFieldCheck('shortDescription')"
+                      @blur="validateRequiredTextField('shortDescription', 'Short Description')"
+                    />
+                    <p
+                      v-if="datasetFieldChecks.shortDescription.message"
+                      :class="['field-check-message', `is-${datasetFieldChecks.shortDescription.status}`]"
+                    >
+                      {{ datasetFieldChecks.shortDescription.message }}
+                    </p>
+                  </div>
                 </div>
 
                 <div class="dataset-form-row">
                   <label class="dataset-form-label required">{{ siteContent.sections.dataRelease.portal.fields.dataFormatScale }}</label>
                   <div class="dataset-field-stack">
+                    <div class="dataset-select-wrap">
+                      <select
+                        v-model="dataFormatSelection"
+                        class="dataset-input dataset-select"
+                        @change="handleDataFormatSelectionChange"
+                      >
+                        <option value="">Select format preset</option>
+                        <option
+                          v-for="format in siteContent.sections.dataRelease.portal.dataFormatOptions"
+                          :key="`format-option-${format}`"
+                          :value="format"
+                        >
+                          {{ format }}
+                        </option>
+                        <option :value="MANUAL_INPUT_VALUE">Manual input</option>
+                      </select>
+                    </div>
                     <input
+                      v-if="dataFormatSelection === MANUAL_INPUT_VALUE"
                       v-model="datasetForm.dataFormatScale"
                       type="text"
                       class="dataset-input"
-                      list="dataset-format-options"
                       :placeholder="siteContent.sections.dataRelease.portal.placeholders.dataFormatScale"
+                      @input="resetDatasetFieldCheck('dataFormatScale')"
+                      @blur="validateRequiredTextField('dataFormatScale', 'Data Format & Scale')"
                     />
-                    <datalist id="dataset-format-options">
-                      <option
-                        v-for="format in siteContent.sections.dataRelease.portal.dataFormatOptions"
-                        :key="format"
-                        :value="format"
-                      />
-                    </datalist>
+                    <p
+                      v-if="datasetFieldChecks.dataFormatScale.message"
+                      :class="['field-check-message', `is-${datasetFieldChecks.dataFormatScale.status}`]"
+                    >
+                      {{ datasetFieldChecks.dataFormatScale.message }}
+                    </p>
                   </div>
                 </div>
 
                 <div class="dataset-form-row">
-                  <label class="dataset-form-label">{{ siteContent.sections.dataRelease.portal.fields.cloudStorageLink1 }}</label>
+                  <label class="dataset-form-label required">{{ siteContent.sections.dataRelease.portal.fields.cloudStorageLink1 }}</label>
                   <div class="dataset-field-stack">
                     <div class="dataset-checkline">
                       <input
@@ -796,9 +1195,9 @@ onBeforeUnmount(() => {
                         class="dataset-input"
                         :placeholder="siteContent.sections.dataRelease.portal.placeholders.cloudStorageLink1"
                         @input="resetCloudLinkCheck(0)"
-                        @blur="validateCloudLink(0)"
+                        @blur="handleCloudLinkBlur(0)"
                       />
-                      <button type="button" class="pill-btn pill-btn-paper dataset-check-btn" @click="validateCloudLink(0)">
+                      <button type="button" class="pill-btn pill-btn-paper dataset-check-btn" @click="handleCloudLinkCheck(0)">
                         Check
                       </button>
                       <span :class="['field-check-icon', `is-${linkChecks[0].status}`]">{{ getCheckIcon(linkChecks[0].status) }}</span>
@@ -817,14 +1216,20 @@ onBeforeUnmount(() => {
                         class="dataset-input"
                         :placeholder="siteContent.sections.dataRelease.portal.placeholders.cloudStorageLink2"
                         @input="resetCloudLinkCheck(1)"
-                        @blur="validateCloudLink(1)"
+                        @blur="handleCloudLinkBlur(1)"
                       />
-                      <button type="button" class="pill-btn pill-btn-paper dataset-check-btn" @click="validateCloudLink(1)">
+                      <button type="button" class="pill-btn pill-btn-paper dataset-check-btn" @click="handleCloudLinkCheck(1)">
                         Check
                       </button>
                       <span :class="['field-check-icon', `is-${linkChecks[1].status}`]">{{ getCheckIcon(linkChecks[1].status) }}</span>
                     </div>
                     <p v-if="linkChecks[1].message" :class="['field-check-message', `is-${linkChecks[1].status}`]">{{ linkChecks[1].message }}</p>
+                    <p
+                      v-if="datasetFieldChecks.cloudStorageLinks.message"
+                      :class="['field-check-message', `is-${datasetFieldChecks.cloudStorageLinks.status}`]"
+                    >
+                      {{ datasetFieldChecks.cloudStorageLinks.message }}
+                    </p>
                   </div>
                 </div>
               </section>
@@ -842,9 +1247,9 @@ onBeforeUnmount(() => {
                         class="dataset-input"
                         :placeholder="siteContent.sections.dataRelease.portal.placeholders.userEmail"
                         @input="resetEmailCheck"
-                        @blur="validateUserEmail"
+                        @blur="validateUserEmail(true)"
                       />
-                      <button type="button" class="pill-btn pill-btn-paper dataset-check-btn" @click="validateUserEmail">
+                      <button type="button" class="pill-btn pill-btn-paper dataset-check-btn" @click="validateUserEmail(true)">
                         Check
                       </button>
                       <span :class="['field-check-icon', `is-${emailCheck.status}`]">{{ getCheckIcon(emailCheck.status) }}</span>
@@ -856,31 +1261,59 @@ onBeforeUnmount(() => {
                 <div class="dataset-form-row">
                   <label class="dataset-form-label required">{{ siteContent.sections.dataRelease.portal.fields.usageLicense }}</label>
                   <div class="dataset-field-stack">
+                    <div class="dataset-select-wrap">
+                      <select
+                        v-model="usageLicenseSelection"
+                        class="dataset-input dataset-select"
+                        @change="handleUsageLicenseSelectionChange"
+                      >
+                        <option value="">Select license preset</option>
+                        <option
+                          v-for="license in siteContent.sections.dataRelease.portal.licenseOptions"
+                          :key="`license-option-${license}`"
+                          :value="license"
+                        >
+                          {{ license }}
+                        </option>
+                        <option :value="MANUAL_INPUT_VALUE">Manual input</option>
+                      </select>
+                    </div>
                     <input
+                      v-if="usageLicenseSelection === MANUAL_INPUT_VALUE"
                       v-model="datasetForm.usageLicense"
                       type="text"
                       class="dataset-input"
-                      list="dataset-license-options"
-                      placeholder="Select or type a license"
+                      placeholder="Type usage license"
+                      @input="resetDatasetFieldCheck('usageLicense')"
+                      @blur="validateRequiredTextField('usageLicense', 'Usage License')"
                     />
-                    <datalist id="dataset-license-options">
-                      <option
-                        v-for="license in siteContent.sections.dataRelease.portal.licenseOptions"
-                        :key="license"
-                        :value="license"
-                      />
-                    </datalist>
+                    <p
+                      v-if="datasetFieldChecks.usageLicense.message"
+                      :class="['field-check-message', `is-${datasetFieldChecks.usageLicense.status}`]"
+                    >
+                      {{ datasetFieldChecks.usageLicense.message }}
+                    </p>
                   </div>
                 </div>
 
                 <div class="dataset-form-row">
                   <label class="dataset-form-label required">{{ siteContent.sections.dataRelease.portal.fields.citationMethod }}</label>
-                  <textarea
-                    v-model="datasetForm.citationMethod"
-                    class="dataset-textarea"
-                    rows="3"
-                    :placeholder="siteContent.sections.dataRelease.portal.placeholders.citationMethod"
-                  />
+                  <div class="dataset-field-stack">
+                    <textarea
+                      v-model="datasetForm.citationMethod"
+                      class="dataset-textarea"
+                      rows="3"
+                      :placeholder="siteContent.sections.dataRelease.portal.placeholders.citationMethod"
+                      @input="resetDatasetFieldCheck('citationMethod')"
+                      @blur="validateRequiredTextField('citationMethod', 'Citation Method')"
+                    />
+                    <p
+                      v-if="datasetFieldChecks.citationMethod.message"
+                      :class="['field-check-message', `is-${datasetFieldChecks.citationMethod.status}`]"
+                    >
+                      {{ datasetFieldChecks.citationMethod.message }}
+                    </p>
+                  </div>
                 </div>
 
                 <div class="dataset-form-row">
@@ -917,6 +1350,12 @@ onBeforeUnmount(() => {
                     <p class="dataset-upload-hint">
                       {{ datasetForm.coverImageName || siteContent.sections.dataRelease.portal.uploadHint }}
                     </p>
+                    <p
+                      v-if="datasetFieldChecks.coverImage.message"
+                      :class="['field-check-message', `is-${datasetFieldChecks.coverImage.status}`]"
+                    >
+                      {{ datasetFieldChecks.coverImage.message }}
+                    </p>
                   </div>
                 </div>
               </section>
@@ -926,12 +1365,31 @@ onBeforeUnmount(() => {
               <button type="button" class="pill-btn dataset-reset-btn" @click="resetDatasetForm">
                 {{ siteContent.sections.dataRelease.portal.resetText }}
               </button>
-              <button type="submit" class="pill-btn pill-btn-paper dataset-submit-btn">
-                {{ siteContent.sections.dataRelease.portal.submitText }}
+              <button type="submit" class="pill-btn pill-btn-paper dataset-submit-btn" :disabled="datasetSubmitting">
+                {{ datasetSubmitting ? 'Submitting...' : siteContent.sections.dataRelease.portal.submitText }}
               </button>
             </div>
             <p class="dataset-submit-note">{{ siteContent.sections.dataRelease.portal.submitNote }}</p>
           </form>
+        </div>
+      </div>
+    </Transition>
+
+    <Transition name="dataset-validation-modal">
+      <div v-if="datasetValidationVisible" class="dataset-validation-overlay" @click="closeDatasetValidationAlert">
+        <div class="dataset-validation-card" @click.stop>
+          <h3 class="dataset-validation-title">{{ datasetValidationTitle }}</h3>
+          <p class="dataset-validation-desc">{{ datasetValidationDescription }}</p>
+          <ul class="dataset-validation-list">
+            <li v-for="(error, index) in datasetValidationErrors" :key="`dataset-submit-error-${index}`">
+              {{ error }}
+            </li>
+          </ul>
+          <div class="dataset-validation-actions">
+            <button type="button" class="pill-btn pill-btn-paper dataset-validation-btn" @click="closeDatasetValidationAlert">
+              OK
+            </button>
+          </div>
         </div>
       </div>
     </Transition>
@@ -942,6 +1400,26 @@ onBeforeUnmount(() => {
           <h3 class="contact-title">{{ siteContent.sections.declaration.contactForm.title }}</h3>
           <form class="contact-form" @submit.prevent="submitContactForm">
             <label class="contact-label">
+              {{ siteContent.sections.declaration.contactForm.fields.userEmail }}
+            </label>
+            <div class="contact-checkline">
+              <input
+                v-model="contactForm.userEmail"
+                type="email"
+                class="contact-input"
+                :placeholder="siteContent.sections.declaration.contactForm.placeholders.userEmail"
+                @input="resetContactEmailCheck"
+                @blur="validateContactEmail(true)"
+              />
+              <button type="button" class="pill-btn pill-btn-paper contact-check-btn" @click="validateContactEmail(true)">
+                Check
+              </button>
+              <span :class="['field-check-icon', `is-${contactEmailCheck.status}`]">{{ getCheckIcon(contactEmailCheck.status) }}</span>
+            </div>
+            <p v-if="contactEmailCheck.message" :class="['field-check-message', `is-${contactEmailCheck.status}`]">
+              {{ contactEmailCheck.message }}
+            </p>
+            <label class="contact-label">
               {{ siteContent.sections.declaration.contactForm.fields.subject }}
             </label>
             <input
@@ -949,7 +1427,12 @@ onBeforeUnmount(() => {
               type="text"
               class="contact-input"
               :placeholder="siteContent.sections.declaration.contactForm.placeholders.subject"
+              @input="resetContactFieldCheck('subject')"
+              @blur="validateContactRequiredField('subject', 'Title')"
             />
+            <p v-if="contactFieldChecks.subject.message" :class="['field-check-message', `is-${contactFieldChecks.subject.status}`]">
+              {{ contactFieldChecks.subject.message }}
+            </p>
             <label class="contact-label">
               {{ siteContent.sections.declaration.contactForm.fields.content }}
             </label>
@@ -958,9 +1441,14 @@ onBeforeUnmount(() => {
               class="contact-textarea"
               rows="6"
               :placeholder="siteContent.sections.declaration.contactForm.placeholders.content"
+              @input="resetContactFieldCheck('content')"
+              @blur="validateContactRequiredField('content', 'Content')"
             />
-            <button type="submit" class="pill-btn pill-btn-paper contact-submit-btn">
-              {{ siteContent.sections.declaration.contactForm.submitText }}
+            <p v-if="contactFieldChecks.content.message" :class="['field-check-message', `is-${contactFieldChecks.content.status}`]">
+              {{ contactFieldChecks.content.message }}
+            </p>
+            <button type="submit" class="pill-btn pill-btn-paper contact-submit-btn" :disabled="contactSubmitting">
+              {{ contactSubmitting ? 'Submitting...' : siteContent.sections.declaration.contactForm.submitText }}
             </button>
           </form>
         </div>
@@ -980,7 +1468,9 @@ onBeforeUnmount(() => {
 <style scoped>
 :global(html) {
   zoom: 1.25;
-  scrollbar-gutter: stable both-edges;
+  scrollbar-gutter: stable;
+  background: #edf2f8;
+  overflow-x: hidden;
 }
 
 :global(*) {
@@ -995,12 +1485,12 @@ onBeforeUnmount(() => {
     #edf2f8;
   color: #1d2738;
   font-family: 'Montserrat', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+  overflow-x: hidden;
 }
 
 :global(body.modal-scroll-lock) {
   overflow: hidden;
   overscroll-behavior: none;
-  padding-right: var(--scrollbar-lock-offset, 0px);
 }
 
 .app-root {
@@ -1126,6 +1616,10 @@ onBeforeUnmount(() => {
   font-size: clamp(16px, 1.35vw, 19px);
   line-height: 1.4;
   color: #27364e;
+  text-align: justify;
+  text-justify: inter-word;
+  hyphens: auto;
+  overflow-wrap: break-word;
 }
 
 .hero-media-wrap {
@@ -1202,6 +1696,14 @@ onBeforeUnmount(() => {
   transform: translateY(-2px);
   box-shadow: 0 10px 20px rgba(49, 76, 117, 0.24);
   filter: brightness(1.04);
+}
+
+.pill-btn:disabled {
+  opacity: 0.64;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: 0 4px 10px rgba(49, 76, 117, 0.12);
+  filter: none;
 }
 
 .pill-btn.muted {
@@ -1337,6 +1839,10 @@ onBeforeUnmount(() => {
   gap: 5px;
 }
 
+.text-rect {
+  width: 100%;
+}
+
 .dataset-text {
   max-width: 75%;
 }
@@ -1349,6 +1855,10 @@ onBeforeUnmount(() => {
   font-size: clamp(14px, 0.96vw, 17px);
   line-height: 1.45;
   color: #2a3a52;
+  text-align: justify;
+  text-justify: inter-word;
+  hyphens: auto;
+  overflow-wrap: break-word;
 }
 
 .dataset-card {
@@ -1496,8 +2006,8 @@ onBeforeUnmount(() => {
 }
 
 .dataset-submit-card {
-  width: min(760px, 78vw);
-  max-height: min(760px, 82vh);
+  width: min(980px, 90vw);
+  max-height: min(680px, 74vh);
   overflow: auto;
   border-radius: 18px;
   border: 1px solid rgba(117, 152, 206, 0.4);
@@ -1610,7 +2120,29 @@ onBeforeUnmount(() => {
 }
 
 .dataset-select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
   cursor: pointer;
+  padding-right: 34px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(245, 251, 255, 0.96));
+}
+
+.dataset-select-wrap {
+  position: relative;
+}
+
+.dataset-select-wrap::after {
+  content: '';
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid #4d6f9f;
+  border-bottom: 2px solid #4d6f9f;
+  transform: translateY(-62%) rotate(45deg);
+  pointer-events: none;
 }
 
 .dataset-textarea {
@@ -1775,6 +2307,83 @@ onBeforeUnmount(() => {
   transform: translateY(10px) scale(0.985);
 }
 
+.dataset-validation-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 83;
+  background: rgba(18, 34, 59, 0.42);
+  display: grid;
+  place-items: center;
+  padding: 18px;
+}
+
+.dataset-validation-card {
+  width: min(680px, 94vw);
+  border-radius: 16px;
+  border: 1px solid rgba(116, 154, 214, 0.5);
+  background: linear-gradient(180deg, rgba(244, 250, 255, 0.97), rgba(236, 245, 255, 0.96));
+  box-shadow: 0 20px 44px rgba(15, 35, 67, 0.28);
+  padding: 18px 18px 16px;
+}
+
+.dataset-validation-title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 800;
+  color: #234679;
+  text-align: center;
+}
+
+.dataset-validation-desc {
+  margin: 8px 0 10px;
+  font-size: 15px;
+  color: #324a6f;
+  text-align: center;
+}
+
+.dataset-validation-list {
+  margin: 0;
+  padding-left: 18px;
+  color: #2b3f5f;
+  font-size: 14px;
+  line-height: 1.42;
+}
+
+.dataset-validation-list li + li {
+  margin-top: 6px;
+}
+
+.dataset-validation-actions {
+  margin-top: 14px;
+  display: flex;
+  justify-content: center;
+}
+
+.dataset-validation-btn {
+  min-width: 140px;
+}
+
+.dataset-validation-modal-enter-active,
+.dataset-validation-modal-leave-active {
+  transition: opacity 0.22s ease;
+}
+
+.dataset-validation-modal-enter-active .dataset-validation-card,
+.dataset-validation-modal-leave-active .dataset-validation-card {
+  transition: transform 0.22s ease, opacity 0.22s ease;
+}
+
+.dataset-validation-modal-enter-from,
+.dataset-validation-modal-leave-to {
+  opacity: 0;
+}
+
+.dataset-validation-modal-enter-from .dataset-validation-card,
+.dataset-validation-modal-leave-to .dataset-validation-card {
+  opacity: 0;
+  transform: translateY(8px) scale(0.985);
+}
+
 .contact-overlay {
   position: fixed;
   inset: 0;
@@ -1832,6 +2441,20 @@ onBeforeUnmount(() => {
 .contact-textarea:focus {
   border-color: #5c8dd1;
   box-shadow: 0 0 0 2px rgba(92, 141, 209, 0.18);
+}
+
+.contact-checkline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 22px;
+  align-items: center;
+  gap: 8px;
+}
+
+.contact-check-btn {
+  min-height: 34px;
+  min-width: 84px;
+  padding: 0 12px;
+  font-size: 13px;
 }
 
 .contact-textarea {
@@ -1989,7 +2612,8 @@ onBeforeUnmount(() => {
   }
 
   .dataset-submit-card {
-    width: min(760px, 96vw);
+    width: min(900px, 95vw);
+    max-height: min(640px, 72vh);
     padding: 18px 14px 14px;
   }
 
@@ -2013,6 +2637,17 @@ onBeforeUnmount(() => {
   }
 
   .dataset-check-btn {
+    min-width: 72px;
+    min-height: 34px;
+    font-size: 12px;
+    padding: 0 10px;
+  }
+
+  .contact-checkline {
+    grid-template-columns: minmax(0, 1fr) auto 20px;
+  }
+
+  .contact-check-btn {
     min-width: 72px;
     min-height: 34px;
     font-size: 12px;

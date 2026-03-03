@@ -219,10 +219,12 @@ export const siteContent = {
       contactForm: {
         title: 'Contact Us',
         fields: {
+          userEmail: 'Your Email',
           subject: 'Title',
           content: 'Content',
         },
         placeholders: {
+          userEmail: 'Enter your email (e.g. user@example.com)',
           subject: 'Enter a short title',
           content: 'Please describe your request or feedback',
         },
