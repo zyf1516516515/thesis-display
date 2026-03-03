@@ -1,4 +1,4 @@
-const OSS_BASE_URL = 'https://thesis-display-bucket.oss-ap-southeast-1.aliyuncs.com'
+const OSS_BASE_URL = 'https://thesis-display-oss-bucket.sylg.chat'
 
 function ossPublic(path) {
   return encodeURI(`${OSS_BASE_URL}/public/${path}`)
@@ -40,4 +40,3 @@ export const mediaAssets = {
     poster: ossPublic('videos/System_Usage_Tutorial_h264-封面.jpg'),
   },
 }
-

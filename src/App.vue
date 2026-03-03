@@ -1,5 +1,5 @@
 ﻿<script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { siteContent } from './config/siteContent'
 import { getNavAction, getVideoPlaybackMode } from './utils/navigation'
 import { extractAnchorFromHash, resolveMediaSrc } from './utils/mediaResolver'
@@ -44,6 +44,9 @@ const contactForm = ref({
 const BODY_LOCK_CLASS = 'modal-scroll-lock'
 const HEADER_OFFSET = 94
 const logoSrc = computed(() => resolveMediaSrc(siteContent.meta.logoUrl))
+const NON_HERO_VIDEO_KEYS = ['result_video_1', 'result_video_2', 'result_video_3', 'tutorial_video']
+const lazyVideoLoadedKeys = ref(new Set())
+let lazyVideoObserver = null
 
 function setBodyScrollLock(locked) {
   if (typeof document === 'undefined') {
@@ -387,14 +390,85 @@ function resolvePosterSrc(src) {
   return resolved || undefined
 }
 
+function markLazyVideoLoaded(videoKey) {
+  if (!videoKey || lazyVideoLoadedKeys.value.has(videoKey)) {
+    return
+  }
+  const next = new Set(lazyVideoLoadedKeys.value)
+  next.add(videoKey)
+  lazyVideoLoadedKeys.value = next
+}
+
+function getLazyVideoSrc(videoKey, rawSrc) {
+  if (!rawSrc || !videoKey) {
+    return ''
+  }
+  if (!lazyVideoLoadedKeys.value.has(videoKey)) {
+    return ''
+  }
+  return resolveMediaSrc(rawSrc)
+}
+
+function setupLazyVideoLoading() {
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    return
+  }
+
+  const targets = Array.from(document.querySelectorAll('video[data-lazy-key]'))
+  if (!targets.length) {
+    return
+  }
+
+  if (!('IntersectionObserver' in window)) {
+    NON_HERO_VIDEO_KEYS.forEach(markLazyVideoLoaded)
+    return
+  }
+
+  lazyVideoObserver?.disconnect()
+  lazyVideoObserver = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) {
+          return
+        }
+        const videoKey = entry.target.dataset.lazyKey
+        markLazyVideoLoaded(videoKey)
+        lazyVideoObserver?.unobserve(entry.target)
+      })
+    },
+    {
+      root: null,
+      rootMargin: '220px 0px',
+      threshold: 0.01,
+    },
+  )
+
+  targets.forEach((el) => {
+    const videoKey = el.dataset.lazyKey
+    if (!videoKey || lazyVideoLoadedKeys.value.has(videoKey)) {
+      return
+    }
+    lazyVideoObserver?.observe(el)
+  })
+}
+
+function teardownLazyVideoLoading() {
+  lazyVideoObserver?.disconnect()
+  lazyVideoObserver = null
+}
+
 onMounted(() => {
   document.title = siteContent.meta.pageTitle
 
   window.addEventListener('hashchange', handleHashChange)
+  nextTick(() => {
+    setupLazyVideoLoading()
+  })
 })
 
 onBeforeUnmount(() => {
   setBodyScrollLock(false)
+  teardownLazyVideoLoading()
   revokeCoverPreview()
   window.removeEventListener('hashchange', handleHashChange)
 })
@@ -476,32 +550,32 @@ onBeforeUnmount(() => {
             :class="['video-card', `video-card-${video.key}`]"
           >
             <video
-              v-if="resolveMediaSrc(video.src)"
               class="section-video"
-              :src="resolveMediaSrc(video.src)"
+              :data-lazy-key="video.key"
+              :src="getLazyVideoSrc(video.key, video.src)"
               :poster="resolvePosterSrc(video.poster)"
               :autoplay="getVideoMode(video.slot).autoplay"
               :controls="getVideoMode(video.slot).controls"
               :loop="getVideoMode(video.slot).loop"
               :muted="getVideoMode(video.slot).muted"
               playsinline
-              preload="metadata"
+              preload="none"
             />
           </article>
         </div>
 
         <article class="video-card video-card-wide video-card-result_video_3">
           <video
-            v-if="resolveMediaSrc(siteContent.sections.resultVideo.videos[2].src)"
             class="section-video"
-            :src="resolveMediaSrc(siteContent.sections.resultVideo.videos[2].src)"
+            data-lazy-key="result_video_3"
+            :src="getLazyVideoSrc('result_video_3', siteContent.sections.resultVideo.videos[2].src)"
             :poster="resolvePosterSrc(siteContent.sections.resultVideo.videos[2].poster)"
             :autoplay="getVideoMode(siteContent.sections.resultVideo.videos[2].slot).autoplay"
             :controls="getVideoMode(siteContent.sections.resultVideo.videos[2].slot).controls"
             :loop="getVideoMode(siteContent.sections.resultVideo.videos[2].slot).loop"
             :muted="getVideoMode(siteContent.sections.resultVideo.videos[2].slot).muted"
             playsinline
-            preload="metadata"
+            preload="none"
           />
         </article>
       </section>
@@ -583,16 +657,16 @@ onBeforeUnmount(() => {
           </div>
           <div class="tutorial-media">
             <video
-              v-if="resolveMediaSrc(siteContent.sections.tutorial.video.src)"
               class="section-video tutorial-video"
-              :src="resolveMediaSrc(siteContent.sections.tutorial.video.src)"
+              data-lazy-key="tutorial_video"
+              :src="getLazyVideoSrc('tutorial_video', siteContent.sections.tutorial.video.src)"
               :poster="resolvePosterSrc(siteContent.sections.tutorial.video.poster)"
               :autoplay="getVideoMode(siteContent.sections.tutorial.video.slot).autoplay"
               :controls="getVideoMode(siteContent.sections.tutorial.video.slot).controls"
               :loop="getVideoMode(siteContent.sections.tutorial.video.slot).loop"
               :muted="getVideoMode(siteContent.sections.tutorial.video.slot).muted"
               playsinline
-              preload="metadata"
+              preload="none"
             />
           </div>
         </div>
