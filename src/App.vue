@@ -15,6 +15,7 @@ const datasetValidationDescription = ref(submissionMailConfig.messages.validatio
 const datasetValidationErrors = ref([])
 const contactModalVisible = ref(false)
 const originalPreviewVisible = ref(false)
+const originalPreviewDownloading = ref(false)
 const originalPreviewMedia = ref({
   type: 'image',
   src: '',
@@ -786,6 +787,74 @@ function getOriginalPreviewTitle(type) {
     return siteContent.meta.mediaPreviewActions.videoTitle
   }
   return siteContent.meta.mediaPreviewActions.imageTitle
+}
+
+function getFilenameFromUrl(rawUrl, fallbackType = 'file') {
+  try {
+    const parsed = new URL(rawUrl)
+    const decodedPath = decodeURIComponent(parsed.pathname || '')
+    const parts = decodedPath.split('/')
+    const fileName = parts[parts.length - 1]
+    if (fileName) {
+      return fileName
+    }
+  } catch {
+    // ignore parse errors and use fallback below
+  }
+  if (fallbackType === 'video') {
+    return 'original-video.mp4'
+  }
+  return 'original-image.png'
+}
+
+function buildAttachmentUrl(rawUrl, fileName) {
+  try {
+    const parsed = new URL(rawUrl)
+    parsed.searchParams.set('response-content-disposition', `attachment; filename=\"${fileName}\"`)
+    return parsed.toString()
+  } catch {
+    return rawUrl
+  }
+}
+
+function triggerLocalDownload(downloadHref, fileName) {
+  const anchor = document.createElement('a')
+  anchor.href = downloadHref
+  anchor.download = fileName
+  anchor.rel = 'noopener noreferrer'
+  anchor.style.display = 'none'
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+}
+
+async function downloadOriginalMedia() {
+  const sourceUrl = originalPreviewMedia.value.downloadUrl
+  if (!sourceUrl || originalPreviewDownloading.value) {
+    return
+  }
+
+  const fileName = getFilenameFromUrl(sourceUrl, originalPreviewMedia.value.type)
+  const attachmentUrl = buildAttachmentUrl(sourceUrl, fileName)
+  originalPreviewDownloading.value = true
+
+  try {
+    const response = await fetch(attachmentUrl)
+    if (!response.ok) {
+      throw new Error(`download request failed with status ${response.status}`)
+    }
+    const blob = await response.blob()
+    const blobUrl = URL.createObjectURL(blob)
+    triggerLocalDownload(blobUrl, fileName)
+    setTimeout(() => {
+      URL.revokeObjectURL(blobUrl)
+    }, 1000)
+  } catch {
+    // If CORS blocks fetch, fallback to attachment URL (may still trigger direct download by OSS headers).
+    triggerLocalDownload(attachmentUrl, fileName)
+  } finally {
+    originalPreviewDownloading.value = false
+  }
 }
 
 function handleGlobalKeydown(event) {
@@ -1594,15 +1663,14 @@ onBeforeUnmount(() => {
             />
           </div>
           <div class="original-media-actions">
-            <a
+            <button
+              type="button"
               class="pill-btn pill-btn-paper original-media-btn"
-              :href="originalPreviewMedia.downloadUrl"
-              target="_blank"
-              rel="noopener noreferrer"
-              download
+              :disabled="originalPreviewDownloading"
+              @click="downloadOriginalMedia"
             >
-              {{ siteContent.meta.mediaPreviewActions.download }}
-            </a>
+              {{ originalPreviewDownloading ? 'Downloading...' : siteContent.meta.mediaPreviewActions.download }}
+            </button>
             <a
               class="pill-btn original-media-btn"
               :href="originalPreviewMedia.downloadUrl"
