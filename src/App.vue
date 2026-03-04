@@ -993,16 +993,6 @@ function getFilenameFromUrl(rawUrl, fallbackType = 'file') {
   return 'original-image.png'
 }
 
-function buildAttachmentUrl(rawUrl, fileName) {
-  try {
-    const parsed = new URL(rawUrl)
-    parsed.searchParams.set('response-content-disposition', `attachment; filename=\"${fileName}\"`)
-    return parsed.toString()
-  } catch {
-    return rawUrl
-  }
-}
-
 function triggerLocalDownload(downloadHref, fileName) {
   const anchor = document.createElement('a')
   anchor.href = downloadHref
@@ -1014,16 +1004,6 @@ function triggerLocalDownload(downloadHref, fileName) {
   anchor.remove()
 }
 
-function triggerServerSideDownload(downloadUrl) {
-  const iframe = document.createElement('iframe')
-  iframe.style.display = 'none'
-  iframe.src = downloadUrl
-  document.body.appendChild(iframe)
-  setTimeout(() => {
-    iframe.remove()
-  }, 15000)
-}
-
 async function downloadOriginalMedia() {
   const sourceUrl = originalPreviewMedia.value.downloadUrl
   if (!sourceUrl || originalPreviewDownloading.value) {
@@ -1031,11 +1011,10 @@ async function downloadOriginalMedia() {
   }
 
   const fileName = getFilenameFromUrl(sourceUrl, originalPreviewMedia.value.type)
-  const attachmentUrl = buildAttachmentUrl(sourceUrl, fileName)
   originalPreviewDownloading.value = true
 
   try {
-    const response = await fetch(attachmentUrl)
+    const response = await fetch(sourceUrl)
     if (!response.ok) {
       throw new Error(`download request failed with status ${response.status}`)
     }
@@ -1046,8 +1025,8 @@ async function downloadOriginalMedia() {
       URL.revokeObjectURL(blobUrl)
     }, 1000)
   } catch {
-    // Fallback path uses attachment response headers and avoids opening a preview tab.
-    triggerServerSideDownload(attachmentUrl)
+    // Fallback keeps a visible path for manual save if browser blocks programmatic download.
+    window.open(sourceUrl, '_blank', 'noopener,noreferrer')
   } finally {
     originalPreviewDownloading.value = false
   }
