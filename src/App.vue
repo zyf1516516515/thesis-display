@@ -16,12 +16,14 @@ const datasetValidationErrors = ref([])
 const contactModalVisible = ref(false)
 const originalPreviewVisible = ref(false)
 const originalPreviewDownloading = ref(false)
-const originalPreviewMedia = ref({
-  type: 'image',
-  src: '',
-  downloadUrl: '',
-  title: '',
-})
+const originalPreviewMedia = ref(createEmptyOriginalPreviewMedia())
+const originalPreviewImageLoading = ref(false)
+const originalPreviewImageError = ref('')
+const originalPreviewImageProgress = ref(0)
+const originalPreviewImageLoadedBytes = ref(0)
+const originalPreviewImageTotalBytes = ref(0)
+const originalPreviewImageSpeedBytesPerSec = ref(0)
+const originalPreviewImageStartedAtMs = ref(0)
 const coverInputRef = ref(null)
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
 const URL_TOKEN_PATTERN = /https?:\/\/[^\s]+/gi
@@ -29,6 +31,15 @@ const LINK_FIELD_KEYS = ['cloudStorageLink1', 'cloudStorageLink2']
 const MANUAL_INPUT_VALUE = '__manual_input__'
 const DNS_TIMEOUT_MS = 5000
 const URL_TIMEOUT_MS = 6000
+
+function createEmptyOriginalPreviewMedia() {
+  return {
+    type: 'image',
+    src: '',
+    downloadUrl: '',
+    title: '',
+  }
+}
 
 function createEmptyDatasetForm() {
   return {
@@ -86,6 +97,9 @@ const logoSrc = computed(() => resolveMediaSrc(siteContent.meta.logoUrl))
 const NON_HERO_VIDEO_KEYS = ['result_video_1', 'result_video_2', 'result_video_3', 'tutorial_video']
 const lazyVideoLoadedKeys = ref(new Set())
 let lazyVideoObserver = null
+let originalPreviewFetchController = null
+let originalPreviewObjectUrl = ''
+let originalPreviewRequestSeq = 0
 
 function setBodyScrollLock(locked) {
   if (typeof document === 'undefined') {
@@ -764,21 +778,193 @@ function resolveDownloadSrc(src) {
   return resolved || ''
 }
 
+function resetOriginalPreviewImageLoadState() {
+  originalPreviewImageLoading.value = false
+  originalPreviewImageError.value = ''
+  originalPreviewImageProgress.value = 0
+  originalPreviewImageLoadedBytes.value = 0
+  originalPreviewImageTotalBytes.value = 0
+  originalPreviewImageSpeedBytesPerSec.value = 0
+  originalPreviewImageStartedAtMs.value = 0
+}
+
+function abortOriginalPreviewFetch() {
+  originalPreviewFetchController?.abort()
+  originalPreviewFetchController = null
+}
+
+function clearOriginalPreviewObjectUrl() {
+  if (originalPreviewObjectUrl) {
+    URL.revokeObjectURL(originalPreviewObjectUrl)
+    originalPreviewObjectUrl = ''
+  }
+}
+
+function formatMB(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return '0.00 MB'
+  }
+  const mb = bytes / (1024 * 1024)
+  return `${mb.toFixed(2)} MB`
+}
+
+function getOriginalImageProgressPercentText() {
+  const percent = Math.min(100, Math.max(0, originalPreviewImageProgress.value || 0))
+  return `${percent.toFixed(0)}%`
+}
+
+function getOriginalImageProgressDetailsText() {
+  const loadedText = formatMB(originalPreviewImageLoadedBytes.value)
+  const totalText = formatMB(originalPreviewImageTotalBytes.value)
+  const speedText = `${formatMB(originalPreviewImageSpeedBytesPerSec.value)}/s`
+  return `${loadedText} / ${totalText} · ${speedText}`
+}
+
+function handleOriginalImageLoaded() {
+  if (originalPreviewImageTotalBytes.value > 0) {
+    originalPreviewImageLoadedBytes.value = Math.max(
+      originalPreviewImageLoadedBytes.value,
+      originalPreviewImageTotalBytes.value,
+    )
+  }
+  const elapsedMs = Date.now() - originalPreviewImageStartedAtMs.value
+  if (elapsedMs > 0 && originalPreviewImageLoadedBytes.value > 0) {
+    originalPreviewImageSpeedBytesPerSec.value = originalPreviewImageLoadedBytes.value / (elapsedMs / 1000)
+  }
+  originalPreviewImageProgress.value = 100
+  originalPreviewImageLoading.value = false
+}
+
+function handleOriginalImageError() {
+  originalPreviewImageLoading.value = false
+  if (!originalPreviewImageError.value) {
+    originalPreviewImageError.value = 'Failed to load original image. Please try Open in New Tab.'
+    return
+  }
+  if (!originalPreviewImageError.value.includes('Please try Open in New Tab.')) {
+    originalPreviewImageError.value = `${originalPreviewImageError.value} Please try Open in New Tab.`
+  }
+}
+
+async function loadOriginalImageWithProgress(sourceUrl, requestId) {
+  abortOriginalPreviewFetch()
+  const controller = new AbortController()
+  originalPreviewFetchController = controller
+  originalPreviewImageStartedAtMs.value = Date.now()
+
+  try {
+    const response = await fetch(sourceUrl, { signal: controller.signal })
+    if (!response.ok) {
+      throw new Error(`image request failed with status ${response.status}`)
+    }
+
+    if (!response.body) {
+      if (requestId !== originalPreviewRequestSeq || controller.signal.aborted) {
+        return
+      }
+      originalPreviewMedia.value = {
+        ...originalPreviewMedia.value,
+        src: sourceUrl,
+      }
+      return
+    }
+
+    const totalBytes = Number(response.headers.get('content-length') || '0')
+    if (Number.isFinite(totalBytes) && totalBytes > 0) {
+      originalPreviewImageTotalBytes.value = totalBytes
+    }
+
+    const reader = response.body.getReader()
+    const chunks = []
+    let loadedBytes = 0
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) {
+        break
+      }
+      if (requestId !== originalPreviewRequestSeq || controller.signal.aborted) {
+        return
+      }
+      if (!value) {
+        continue
+      }
+      chunks.push(value)
+      loadedBytes += value.byteLength
+      originalPreviewImageLoadedBytes.value = loadedBytes
+      if (originalPreviewImageTotalBytes.value > 0) {
+        originalPreviewImageProgress.value = Math.min(
+          100,
+          (loadedBytes / originalPreviewImageTotalBytes.value) * 100,
+        )
+      }
+      const elapsedMs = Date.now() - originalPreviewImageStartedAtMs.value
+      if (elapsedMs > 0) {
+        originalPreviewImageSpeedBytesPerSec.value = loadedBytes / (elapsedMs / 1000)
+      }
+    }
+
+    if (requestId !== originalPreviewRequestSeq || controller.signal.aborted) {
+      return
+    }
+
+    const contentType = response.headers.get('content-type') || 'image/png'
+    const blob = new Blob(chunks, { type: contentType })
+    clearOriginalPreviewObjectUrl()
+    originalPreviewObjectUrl = URL.createObjectURL(blob)
+    originalPreviewMedia.value = {
+      ...originalPreviewMedia.value,
+      src: originalPreviewObjectUrl,
+    }
+  } catch {
+    if (requestId !== originalPreviewRequestSeq || controller.signal.aborted) {
+      return
+    }
+    originalPreviewImageError.value = 'Loading progress is unavailable. Showing direct source.'
+    originalPreviewMedia.value = {
+      ...originalPreviewMedia.value,
+      src: sourceUrl,
+    }
+  } finally {
+    if (requestId !== originalPreviewRequestSeq) {
+      return
+    }
+    originalPreviewFetchController = null
+  }
+}
+
 function openOriginalMediaPreview(type, rawUrl, title = '') {
   const resolvedUrl = resolveDownloadSrc(rawUrl)
   if (!resolvedUrl) {
     return
   }
+  originalPreviewRequestSeq += 1
+  const requestId = originalPreviewRequestSeq
+  abortOriginalPreviewFetch()
+  clearOriginalPreviewObjectUrl()
+  resetOriginalPreviewImageLoadState()
+
   originalPreviewMedia.value = {
     type,
-    src: resolvedUrl,
+    src: type === 'image' ? '' : resolvedUrl,
     downloadUrl: resolvedUrl,
     title,
   }
+
+  if (type === 'image') {
+    originalPreviewImageLoading.value = true
+    void loadOriginalImageWithProgress(resolvedUrl, requestId)
+  }
+
   originalPreviewVisible.value = true
 }
 
 function closeOriginalMediaPreview() {
+  originalPreviewRequestSeq += 1
+  abortOriginalPreviewFetch()
+  clearOriginalPreviewObjectUrl()
+  resetOriginalPreviewImageLoadState()
+  originalPreviewMedia.value = createEmptyOriginalPreviewMedia()
   originalPreviewVisible.value = false
 }
 
@@ -828,6 +1014,16 @@ function triggerLocalDownload(downloadHref, fileName) {
   anchor.remove()
 }
 
+function triggerServerSideDownload(downloadUrl) {
+  const iframe = document.createElement('iframe')
+  iframe.style.display = 'none'
+  iframe.src = downloadUrl
+  document.body.appendChild(iframe)
+  setTimeout(() => {
+    iframe.remove()
+  }, 15000)
+}
+
 async function downloadOriginalMedia() {
   const sourceUrl = originalPreviewMedia.value.downloadUrl
   if (!sourceUrl || originalPreviewDownloading.value) {
@@ -850,8 +1046,8 @@ async function downloadOriginalMedia() {
       URL.revokeObjectURL(blobUrl)
     }, 1000)
   } catch {
-    // If CORS blocks fetch, fallback to attachment URL (may still trigger direct download by OSS headers).
-    triggerLocalDownload(attachmentUrl, fileName)
+    // Fallback path uses attachment response headers and avoids opening a preview tab.
+    triggerServerSideDownload(attachmentUrl)
   } finally {
     originalPreviewDownloading.value = false
   }
@@ -945,6 +1141,9 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   setBodyScrollLock(false)
+  abortOriginalPreviewFetch()
+  clearOriginalPreviewObjectUrl()
+  resetOriginalPreviewImageLoadState()
   teardownLazyVideoLoading()
   revokeCoverPreview()
   window.removeEventListener('hashchange', handleHashChange)
@@ -1647,12 +1846,30 @@ onBeforeUnmount(() => {
             {{ originalPreviewMedia.title || getOriginalPreviewTitle(originalPreviewMedia.type) }}
           </h3>
           <div class="original-media-stage">
-            <img
-              v-if="originalPreviewMedia.type === 'image'"
-              :src="originalPreviewMedia.src"
-              :alt="getOriginalPreviewTitle('image')"
-              class="original-media-image"
-            />
+            <div v-if="originalPreviewMedia.type === 'image'" class="original-media-image-wrap">
+              <img
+                v-if="originalPreviewMedia.src"
+                :src="originalPreviewMedia.src"
+                :alt="getOriginalPreviewTitle('image')"
+                class="original-media-image"
+                @load="handleOriginalImageLoaded"
+                @error="handleOriginalImageError"
+              />
+              <div v-if="originalPreviewImageLoading" class="original-media-loading-panel">
+                <p class="original-media-loading-title">Loading original image...</p>
+                <div class="original-media-progress-track">
+                  <span
+                    class="original-media-progress-fill"
+                    :style="{ width: getOriginalImageProgressPercentText() }"
+                  />
+                </div>
+                <p class="original-media-progress-percent">{{ getOriginalImageProgressPercentText() }}</p>
+                <p class="original-media-progress-details">{{ getOriginalImageProgressDetailsText() }}</p>
+              </div>
+              <p v-if="!originalPreviewImageLoading && originalPreviewImageError" class="original-media-load-error">
+                {{ originalPreviewImageError }}
+              </p>
+            </div>
             <video
               v-else
               :src="originalPreviewMedia.src"
@@ -2280,6 +2497,74 @@ onBeforeUnmount(() => {
   justify-content: center;
   min-height: 300px;
   overflow: auto;
+}
+
+.original-media-image-wrap {
+  position: relative;
+  min-width: min(100%, 440px);
+  min-height: 280px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.original-media-loading-panel {
+  position: absolute;
+  inset: 0;
+  background: rgba(249, 252, 255, 0.94);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 16px;
+  text-align: center;
+}
+
+.original-media-loading-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: #1f3457;
+}
+
+.original-media-progress-track {
+  width: min(560px, 88%);
+  height: 12px;
+  border-radius: 999px;
+  background: #dce8f8;
+  overflow: hidden;
+  border: 1px solid #c1d4ef;
+}
+
+.original-media-progress-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, #5a83c4 0%, #79a2df 100%);
+  transition: width 0.18s linear;
+}
+
+.original-media-progress-percent {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+  color: #1d3963;
+}
+
+.original-media-progress-details {
+  margin: 0;
+  font-size: 13px;
+  color: #34527d;
+}
+
+.original-media-load-error {
+  margin: 0;
+  font-size: 13px;
+  color: #b03f3f;
+  font-weight: 600;
+  text-align: center;
+  padding: 10px 14px;
 }
 
 .original-media-image,
