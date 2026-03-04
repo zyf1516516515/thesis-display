@@ -751,6 +751,11 @@ function resolvePosterSrc(src) {
   return resolved || undefined
 }
 
+function resolveDownloadSrc(src) {
+  const resolved = resolveMediaSrc(src)
+  return resolved || ''
+}
+
 function markLazyVideoLoaded(videoKey) {
   if (!videoKey || lazyVideoLoadedKeys.value.has(videoKey)) {
     return
@@ -874,6 +879,15 @@ onBeforeUnmount(() => {
             playsinline
             preload="metadata"
           />
+          <a
+            v-if="resolveDownloadSrc(siteContent.hero.video.downloadUrl)"
+            class="media-download-link media-download-overlay"
+            :href="resolveDownloadSrc(siteContent.hero.video.downloadUrl)"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {{ siteContent.meta.mediaDownloadLabels.video }}
+          </a>
         </div>
       </section>
 
@@ -899,6 +913,16 @@ onBeforeUnmount(() => {
             :alt="siteContent.sections.performance.image.alt"
             class="media-image performance-image"
           />
+          <p v-if="resolveDownloadSrc(siteContent.sections.performance.image.downloadUrl)" class="media-action-row">
+            <a
+              class="media-download-link"
+              :href="resolveDownloadSrc(siteContent.sections.performance.image.downloadUrl)"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {{ siteContent.meta.mediaDownloadLabels.image }}
+            </a>
+          </p>
         </article>
       </section>
 
@@ -922,6 +946,15 @@ onBeforeUnmount(() => {
               playsinline
               preload="none"
             />
+            <a
+              v-if="resolveDownloadSrc(video.downloadUrl)"
+              class="media-download-link media-download-overlay"
+              :href="resolveDownloadSrc(video.downloadUrl)"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {{ siteContent.meta.mediaDownloadLabels.video }}
+            </a>
           </article>
         </div>
 
@@ -938,6 +971,15 @@ onBeforeUnmount(() => {
             playsinline
             preload="none"
           />
+          <a
+            v-if="resolveDownloadSrc(siteContent.sections.resultVideo.videos[2].downloadUrl)"
+            class="media-download-link media-download-overlay"
+            :href="resolveDownloadSrc(siteContent.sections.resultVideo.videos[2].downloadUrl)"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {{ siteContent.meta.mediaDownloadLabels.video }}
+          </a>
         </article>
       </section>
 
@@ -956,6 +998,16 @@ onBeforeUnmount(() => {
               :alt="siteContent.sections.dataset.image.alt"
               class="media-image dataset-image"
             />
+            <p v-if="resolveDownloadSrc(siteContent.sections.dataset.image.downloadUrl)" class="media-action-row">
+              <a
+                class="media-download-link"
+                :href="resolveDownloadSrc(siteContent.sections.dataset.image.downloadUrl)"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {{ siteContent.meta.mediaDownloadLabels.image }}
+              </a>
+            </p>
             <div class="dataset-label-row">
               <span v-for="(label, index) in siteContent.sections.dataset.footerLabels" :key="`dataset-footer-${index}`">{{ label }}</span>
             </div>
@@ -992,6 +1044,16 @@ onBeforeUnmount(() => {
             :alt="block.image.alt"
             :class="['media-image', { 'ext-space-image': block.key === 'ext_6' }]"
           />
+          <p v-if="resolveDownloadSrc(block.image.downloadUrl)" class="media-action-row">
+            <a
+              class="media-download-link"
+              :href="resolveDownloadSrc(block.image.downloadUrl)"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {{ siteContent.meta.mediaDownloadLabels.image }}
+            </a>
+          </p>
           <p v-if="index === siteContent.sections.extensibility.blocks.length - 1" class="panel-note">
             {{ siteContent.sections.extensibility.note }}
           </p>
@@ -1007,6 +1069,16 @@ onBeforeUnmount(() => {
             :alt="siteContent.sections.handDrawn.image.alt"
             class="media-image"
           />
+          <p v-if="resolveDownloadSrc(siteContent.sections.handDrawn.image.downloadUrl)" class="media-action-row">
+            <a
+              class="media-download-link"
+              :href="resolveDownloadSrc(siteContent.sections.handDrawn.image.downloadUrl)"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {{ siteContent.meta.mediaDownloadLabels.image }}
+            </a>
+          </p>
         </article>
       </section>
 
@@ -1029,6 +1101,15 @@ onBeforeUnmount(() => {
               playsinline
               preload="none"
             />
+            <a
+              v-if="resolveDownloadSrc(siteContent.sections.tutorial.video.downloadUrl)"
+              class="media-download-link media-download-overlay"
+              :href="resolveDownloadSrc(siteContent.sections.tutorial.video.downloadUrl)"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {{ siteContent.meta.mediaDownloadLabels.video }}
+            </a>
           </div>
         </div>
       </section>
@@ -1623,6 +1704,7 @@ onBeforeUnmount(() => {
 }
 
 .hero-media-wrap {
+  position: relative;
   margin-top: 8px;
   width: 100%;
   aspect-ratio: var(--hero-video-aspect-ratio);
@@ -1795,6 +1877,7 @@ onBeforeUnmount(() => {
 }
 
 .video-card {
+  position: relative;
   min-height: 0;
 }
 
@@ -1932,6 +2015,7 @@ onBeforeUnmount(() => {
 }
 
 .tutorial-media {
+  position: relative;
   aspect-ratio: 1750 / 932;
   width: 75%;
   margin-left: auto;
@@ -1949,6 +2033,36 @@ onBeforeUnmount(() => {
 
 .section-cta {
   margin-top: 26px;
+}
+
+.media-action-row {
+  margin: 8px 0 0;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.media-download-link {
+  color: #1f67cf;
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.media-download-link:hover {
+  text-decoration: underline;
+}
+
+.media-download-overlay {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 2;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(95, 130, 188, 0.45);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 4px 12px rgba(28, 47, 79, 0.14);
 }
 
 .ext-space-image {
@@ -2716,5 +2830,3 @@ onBeforeUnmount(() => {
   }
 }
 </style>
-
-

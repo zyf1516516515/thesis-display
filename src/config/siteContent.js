@@ -3,8 +3,12 @@
 export const siteContent = {
   meta: {
     pageTitle: 'Focus Framework Showcase',
-    logoUrl: mediaAssets.meta.logo,
+    logoUrl: mediaAssets.meta.logo.previewUrl,
     logoAlt: 'Logo图片',
+    mediaDownloadLabels: {
+      image: 'Download Original Image',
+      video: 'Download Original Video',
+    },
     comingSoonMessage: '正在开发中',
     comingSoonMessages: {
       default: '该功能正在开发中',
@@ -41,7 +45,8 @@ export const siteContent = {
     ],
     video: {
       slot: 'hero',
-      src: mediaAssets.hero.mainVideo,
+      src: mediaAssets.hero.mainVideo.previewUrl,
+      downloadUrl: mediaAssets.hero.mainVideo.downloadUrl,
       poster: '',
       placeholder: '一个循环播放的视频',
     },
@@ -52,7 +57,8 @@ export const siteContent = {
       title: 'The performance of the framework',
       panelTitle: 'Demonstration of improved imaging effect',
       image: {
-        src: mediaAssets.performance.demoImage,
+        src: mediaAssets.performance.demoImage.previewUrl,
+        downloadUrl: mediaAssets.performance.demoImage.downloadUrl,
         alt: '性能展示图',
         placeholder: '一张大图片',
       },
@@ -64,22 +70,25 @@ export const siteContent = {
         {
           key: 'result_video_1',
           slot: 'result',
-          src: mediaAssets.resultVideo.video1,
+          src: mediaAssets.resultVideo.video1.previewUrl,
+          downloadUrl: mediaAssets.resultVideo.video1.downloadUrl,
           poster: '',
           placeholder: '视频1',
         },
         {
           key: 'result_video_2',
           slot: 'result',
-          src: mediaAssets.resultVideo.video2,
+          src: mediaAssets.resultVideo.video2.previewUrl,
+          downloadUrl: mediaAssets.resultVideo.video2.downloadUrl,
           poster: '',
           placeholder: '视频2',
         },
         {
           key: 'result_video_3',
           slot: 'result',
-          src: mediaAssets.resultVideo.video3,
-          poster: mediaAssets.resultVideo.video3Poster,
+          src: mediaAssets.resultVideo.video3.previewUrl,
+          downloadUrl: mediaAssets.resultVideo.video3.downloadUrl,
+          poster: mediaAssets.resultVideo.video3Poster.previewUrl,
           placeholder: '视频3（封面为自定义图片）',
         },
       ],
@@ -91,7 +100,8 @@ export const siteContent = {
       lines: ['The dataset includes raw images and corresponding behavioral annotations. We constructed a visual annotation system based on the behavioral space. Annotators optimize image quality through manual rule-based decisions and parameter adjustments while observing real-time effects, thereby capturing the behavioral trajectory annotations for each images transformation from its original state to its optimal state'],
       cardTitle: '2.4MB Enhancement behavior dataset',
       image: {
-        src: mediaAssets.dataset.previewImage,
+        src: mediaAssets.dataset.previewImage.previewUrl,
+        downloadUrl: mediaAssets.dataset.previewImage.downloadUrl,
         alt: '数据集预览图',
         placeholder: '一张图片',
       },
@@ -106,16 +116,21 @@ export const siteContent = {
       title: 'The extensibility potential of the framework',
       introLines: ['Beyond the life sciences domain, the LS GIE framework can be readily extended to other fields. Here we present the enhancement results from annotation tests on a subset of data, indicating that LS GIE can be easily generalized to these domains.'],
       blocks: [
-        { key: 'ext_1', title: 'Integrated circuit', image: { src: mediaAssets.extensibility.integratedCircuit, alt: 'Integrated circuit', placeholder: '图片' } },
-        { key: 'ext_2', title: 'metallographic analysis', image: { src: mediaAssets.extensibility.metallographicAnalysis, alt: 'metallographic analysis', placeholder: '图片' } },
-        { key: 'ext_3', title: 'Drone aerial photography', image: { src: mediaAssets.extensibility.droneAerial, alt: 'Drone aerial photography', placeholder: '图片' } },
-        { key: 'ext_4', title: 'Underwater drone', image: { src: mediaAssets.extensibility.underwaterDrone, alt: 'Underwater drone', placeholder: '图片' } },
+        { key: 'ext_1', title: 'Integrated circuit', image: { src: mediaAssets.extensibility.integratedCircuit.previewUrl, downloadUrl: mediaAssets.extensibility.integratedCircuit.downloadUrl, alt: 'Integrated circuit', placeholder: '图片' } },
+        { key: 'ext_2', title: 'metallographic analysis', image: { src: mediaAssets.extensibility.metallographicAnalysis.previewUrl, downloadUrl: mediaAssets.extensibility.metallographicAnalysis.downloadUrl, alt: 'metallographic analysis', placeholder: '图片' } },
+        { key: 'ext_3', title: 'Drone aerial photography', image: { src: mediaAssets.extensibility.droneAerial.previewUrl, downloadUrl: mediaAssets.extensibility.droneAerial.downloadUrl, alt: 'Drone aerial photography', placeholder: '图片' } },
+        { key: 'ext_4', title: 'Underwater drone', image: { src: mediaAssets.extensibility.underwaterDrone.previewUrl, downloadUrl: mediaAssets.extensibility.underwaterDrone.downloadUrl, alt: 'Underwater drone', placeholder: '图片' } },
         {
           key: 'ext_5',
           title: 'Agricultural harvesting robot perspective (kumquat, cluster tomatoe, and apple)',
-          image: { src: mediaAssets.extensibility.agriculturalRobot, alt: 'Agricultural harvesting robot perspective', placeholder: '图片' },
+          image: {
+            src: mediaAssets.extensibility.agriculturalRobot.previewUrl,
+            downloadUrl: mediaAssets.extensibility.agriculturalRobot.downloadUrl,
+            alt: 'Agricultural harvesting robot perspective',
+            placeholder: '图片',
+          },
         },
-        { key: 'ext_6', title: 'Space exploration', image: { src: mediaAssets.extensibility.spaceExploration, alt: 'Space exploration', placeholder: '图片' } },
+        { key: 'ext_6', title: 'Space exploration', image: { src: mediaAssets.extensibility.spaceExploration.previewUrl, downloadUrl: mediaAssets.extensibility.spaceExploration.downloadUrl, alt: 'Space exploration', placeholder: '图片' } },
       ],
       note: 'The image is from NASA.',
     },
@@ -123,7 +138,8 @@ export const siteContent = {
     handDrawn: {
       title: 'Hand drawn circuit diagram',
       image: {
-        src: mediaAssets.handDrawn.image,
+        src: mediaAssets.handDrawn.image.previewUrl,
+        downloadUrl: mediaAssets.handDrawn.image.downloadUrl,
         alt: 'Hand drawn circuit diagram',
         placeholder: '图片',
       },
@@ -135,8 +151,9 @@ export const siteContent = {
       video: {
         key: 'tutorial_video',
         slot: 'result',
-        src: mediaAssets.tutorial.video,
-        poster: mediaAssets.tutorial.poster,
+        src: mediaAssets.tutorial.video.previewUrl,
+        downloadUrl: mediaAssets.tutorial.video.downloadUrl,
+        poster: mediaAssets.tutorial.poster.previewUrl,
         placeholder: '教程视频',
       },
     },
@@ -233,4 +250,3 @@ export const siteContent = {
     },
   },
 }
-
