@@ -23,13 +23,15 @@ export const mediaAssets = {
   },
   performance: {
     demoImage: createMediaAsset(
-      'images/preview_q1/performance_demoImage.png',
+      'images/preview_q2/performance_demoImage.png',
       'images/Demonstration of improved imaging effect.svg',
     ),
   },
   resultVideo: {
     video1: createMediaAsset('videos/segment_last_30_merged_mini_h264.mp4'),
+    video1Poster: createMediaAsset('images/preview_q2/resultVideo_video1Poster.png', 'videos/segment_last_30_merged_mini_h264.mp4'),
     video2: createMediaAsset('videos/SAM20M_endoscopy_00_EndoVis_2017_RIS_merged_h264.mp4'),
+    video2Poster: createMediaAsset('images/preview_q2/resultVideo_video2Poster.png', 'videos/SAM20M_endoscopy_00_EndoVis_2017_RIS_merged_h264.mp4'),
     video3: createMediaAsset('videos/屏幕录制 2026-02-13 160516.mp4'),
     video3Poster: createMediaAsset('images/preview_q1/resultVideo_video3Poster.png', 'videos/屏幕录制-封面.png'),
   },
@@ -43,19 +45,19 @@ export const mediaAssets = {
     ),
     metallographicAnalysis: createMediaAsset('images/preview_q1/extensibility_metallographicAnalysis.png', 'images/metallographic analysis.svg'),
     droneAerial: createMediaAsset(
-      'images/preview_q1/extensibility_droneAerial.png',
+      'images/preview_q2/extensibility_droneAerial.png',
       'images/Drone aerial photography.svg',
     ),
     underwaterDrone: createMediaAsset(
-      'images/preview_q1/extensibility_underwaterDrone.png',
+      'images/preview_q2/extensibility_underwaterDrone.png',
       'images/Underwater drone.svg',
     ),
     agriculturalRobot: createMediaAsset(
-      'images/preview_q1/extensibility_agriculturalRobot.png',
+      'images/preview_q2/extensibility_agriculturalRobot.png',
       'images/Agricultural harvesting robot perspective.svg',
     ),
     spaceExploration: createMediaAsset(
-      'images/preview_q1/extensibility_spaceExploration.png',
+      'images/preview_q2/extensibility_spaceExploration.png',
       'images/Space exploration.svg',
     ),
   },

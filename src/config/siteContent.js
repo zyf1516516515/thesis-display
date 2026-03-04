@@ -6,8 +6,15 @@ export const siteContent = {
     logoUrl: mediaAssets.meta.logo.previewUrl,
     logoAlt: 'Logo图片',
     mediaDownloadLabels: {
-      image: 'Download Original Image',
-      video: 'Download Original Video',
+      image: 'Preview Original Image',
+      video: 'Preview Original Video',
+    },
+    mediaPreviewActions: {
+      imageTitle: 'Original Image Preview',
+      videoTitle: 'Original Video Preview',
+      download: 'Download Original File',
+      openInNewTab: 'Open in New Tab',
+      close: 'Close',
     },
     comingSoonMessage: '正在开发中',
     comingSoonMessages: {
@@ -72,7 +79,7 @@ export const siteContent = {
           slot: 'result',
           src: mediaAssets.resultVideo.video1.previewUrl,
           downloadUrl: mediaAssets.resultVideo.video1.downloadUrl,
-          poster: '',
+          poster: mediaAssets.resultVideo.video1Poster.previewUrl,
           placeholder: '视频1',
         },
         {
@@ -80,7 +87,7 @@ export const siteContent = {
           slot: 'result',
           src: mediaAssets.resultVideo.video2.previewUrl,
           downloadUrl: mediaAssets.resultVideo.video2.downloadUrl,
-          poster: '',
+          poster: mediaAssets.resultVideo.video2Poster.previewUrl,
           placeholder: '视频2',
         },
         {

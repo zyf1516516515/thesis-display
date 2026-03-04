@@ -14,6 +14,13 @@ const datasetValidationTitle = ref(submissionMailConfig.messages.validationTitle
 const datasetValidationDescription = ref(submissionMailConfig.messages.validationDescription)
 const datasetValidationErrors = ref([])
 const contactModalVisible = ref(false)
+const originalPreviewVisible = ref(false)
+const originalPreviewMedia = ref({
+  type: 'image',
+  src: '',
+  downloadUrl: '',
+  title: '',
+})
 const coverInputRef = ref(null)
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
 const URL_TOKEN_PATTERN = /https?:\/\/[^\s]+/gi
@@ -700,9 +707,9 @@ async function submitContactForm() {
 }
 
 watch(
-  [comingSoonVisible, datasetSubmissionVisible, datasetValidationVisible, contactModalVisible],
-  ([comingSoon, datasetSubmission, datasetValidation, contact]) => {
-    setBodyScrollLock(comingSoon || datasetSubmission || datasetValidation || contact)
+  [comingSoonVisible, datasetSubmissionVisible, datasetValidationVisible, contactModalVisible, originalPreviewVisible],
+  ([comingSoon, datasetSubmission, datasetValidation, contact, originalPreview]) => {
+    setBodyScrollLock(comingSoon || datasetSubmission || datasetValidation || contact || originalPreview)
   },
 )
 
@@ -754,6 +761,40 @@ function resolvePosterSrc(src) {
 function resolveDownloadSrc(src) {
   const resolved = resolveMediaSrc(src)
   return resolved || ''
+}
+
+function openOriginalMediaPreview(type, rawUrl, title = '') {
+  const resolvedUrl = resolveDownloadSrc(rawUrl)
+  if (!resolvedUrl) {
+    return
+  }
+  originalPreviewMedia.value = {
+    type,
+    src: resolvedUrl,
+    downloadUrl: resolvedUrl,
+    title,
+  }
+  originalPreviewVisible.value = true
+}
+
+function closeOriginalMediaPreview() {
+  originalPreviewVisible.value = false
+}
+
+function getOriginalPreviewTitle(type) {
+  if (type === 'video') {
+    return siteContent.meta.mediaPreviewActions.videoTitle
+  }
+  return siteContent.meta.mediaPreviewActions.imageTitle
+}
+
+function handleGlobalKeydown(event) {
+  if (event.key !== 'Escape') {
+    return
+  }
+  if (originalPreviewVisible.value) {
+    closeOriginalMediaPreview()
+  }
 }
 
 function markLazyVideoLoaded(videoKey) {
@@ -827,6 +868,7 @@ onMounted(() => {
   document.title = siteContent.meta.pageTitle
 
   window.addEventListener('hashchange', handleHashChange)
+  window.addEventListener('keydown', handleGlobalKeydown)
   nextTick(() => {
     setupLazyVideoLoading()
   })
@@ -837,6 +879,7 @@ onBeforeUnmount(() => {
   teardownLazyVideoLoading()
   revokeCoverPreview()
   window.removeEventListener('hashchange', handleHashChange)
+  window.removeEventListener('keydown', handleGlobalKeydown)
 })
 </script>
 
@@ -879,15 +922,14 @@ onBeforeUnmount(() => {
             playsinline
             preload="metadata"
           />
-          <a
+          <button
             v-if="resolveDownloadSrc(siteContent.hero.video.downloadUrl)"
-            class="media-download-link media-download-overlay"
-            :href="resolveDownloadSrc(siteContent.hero.video.downloadUrl)"
-            target="_blank"
-            rel="noopener noreferrer"
+            type="button"
+            class="media-download-link media-download-overlay media-preview-trigger"
+            @click="openOriginalMediaPreview('video', siteContent.hero.video.downloadUrl, siteContent.meta.mediaDownloadLabels.video)"
           >
             {{ siteContent.meta.mediaDownloadLabels.video }}
-          </a>
+          </button>
         </div>
       </section>
 
@@ -913,15 +955,14 @@ onBeforeUnmount(() => {
             :alt="siteContent.sections.performance.image.alt"
             class="media-image performance-image"
           />
-          <p v-if="resolveDownloadSrc(siteContent.sections.performance.image.downloadUrl)" class="media-action-row">
-            <a
-              class="media-download-link"
-              :href="resolveDownloadSrc(siteContent.sections.performance.image.downloadUrl)"
-              target="_blank"
-              rel="noopener noreferrer"
+          <p v-if="resolveDownloadSrc(siteContent.sections.performance.image.downloadUrl)" class="media-action-row performance-action-row">
+            <button
+              type="button"
+              class="media-download-link media-preview-trigger"
+              @click="openOriginalMediaPreview('image', siteContent.sections.performance.image.downloadUrl, siteContent.meta.mediaDownloadLabels.image)"
             >
               {{ siteContent.meta.mediaDownloadLabels.image }}
-            </a>
+            </button>
           </p>
         </article>
       </section>
@@ -935,7 +976,7 @@ onBeforeUnmount(() => {
             :class="['video-card', `video-card-${video.key}`]"
           >
             <video
-              class="section-video"
+              :class="['section-video', { 'result-video-1-zoom': video.key === 'result_video_1' }]"
               :data-lazy-key="video.key"
               :src="getLazyVideoSrc(video.key, video.src)"
               :poster="resolvePosterSrc(video.poster)"
@@ -944,17 +985,16 @@ onBeforeUnmount(() => {
               :loop="getVideoMode(video.slot).loop"
               :muted="getVideoMode(video.slot).muted"
               playsinline
-              preload="none"
+              preload="metadata"
             />
-            <a
+            <button
               v-if="resolveDownloadSrc(video.downloadUrl)"
-              class="media-download-link media-download-overlay"
-              :href="resolveDownloadSrc(video.downloadUrl)"
-              target="_blank"
-              rel="noopener noreferrer"
+              type="button"
+              class="media-download-link media-download-overlay media-preview-trigger"
+              @click="openOriginalMediaPreview('video', video.downloadUrl, siteContent.meta.mediaDownloadLabels.video)"
             >
               {{ siteContent.meta.mediaDownloadLabels.video }}
-            </a>
+            </button>
           </article>
         </div>
 
@@ -971,15 +1011,14 @@ onBeforeUnmount(() => {
             playsinline
             preload="none"
           />
-          <a
+          <button
             v-if="resolveDownloadSrc(siteContent.sections.resultVideo.videos[2].downloadUrl)"
-            class="media-download-link media-download-overlay"
-            :href="resolveDownloadSrc(siteContent.sections.resultVideo.videos[2].downloadUrl)"
-            target="_blank"
-            rel="noopener noreferrer"
+            type="button"
+            class="media-download-link media-download-overlay media-preview-trigger"
+            @click="openOriginalMediaPreview('video', siteContent.sections.resultVideo.videos[2].downloadUrl, siteContent.meta.mediaDownloadLabels.video)"
           >
             {{ siteContent.meta.mediaDownloadLabels.video }}
-          </a>
+          </button>
         </article>
       </section>
 
@@ -999,14 +1038,13 @@ onBeforeUnmount(() => {
               class="media-image dataset-image"
             />
             <p v-if="resolveDownloadSrc(siteContent.sections.dataset.image.downloadUrl)" class="media-action-row">
-              <a
-                class="media-download-link"
-                :href="resolveDownloadSrc(siteContent.sections.dataset.image.downloadUrl)"
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                type="button"
+                class="media-download-link media-preview-trigger"
+                @click="openOriginalMediaPreview('image', siteContent.sections.dataset.image.downloadUrl, siteContent.meta.mediaDownloadLabels.image)"
               >
                 {{ siteContent.meta.mediaDownloadLabels.image }}
-              </a>
+              </button>
             </p>
             <div class="dataset-label-row">
               <span v-for="(label, index) in siteContent.sections.dataset.footerLabels" :key="`dataset-footer-${index}`">{{ label }}</span>
@@ -1042,17 +1080,16 @@ onBeforeUnmount(() => {
             v-if="resolveMediaSrc(block.image.src)"
             :src="resolveMediaSrc(block.image.src)"
             :alt="block.image.alt"
-            :class="['media-image', { 'ext-space-image': block.key === 'ext_6' }]"
+            :class="['media-image', { 'ext-large-image': ['ext_3', 'ext_4', 'ext_5', 'ext_6'].includes(block.key) }]"
           />
           <p v-if="resolveDownloadSrc(block.image.downloadUrl)" class="media-action-row">
-            <a
-              class="media-download-link"
-              :href="resolveDownloadSrc(block.image.downloadUrl)"
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              type="button"
+              class="media-download-link media-preview-trigger"
+              @click="openOriginalMediaPreview('image', block.image.downloadUrl, siteContent.meta.mediaDownloadLabels.image)"
             >
               {{ siteContent.meta.mediaDownloadLabels.image }}
-            </a>
+            </button>
           </p>
           <p v-if="index === siteContent.sections.extensibility.blocks.length - 1" class="panel-note">
             {{ siteContent.sections.extensibility.note }}
@@ -1070,14 +1107,13 @@ onBeforeUnmount(() => {
             class="media-image"
           />
           <p v-if="resolveDownloadSrc(siteContent.sections.handDrawn.image.downloadUrl)" class="media-action-row">
-            <a
-              class="media-download-link"
-              :href="resolveDownloadSrc(siteContent.sections.handDrawn.image.downloadUrl)"
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              type="button"
+              class="media-download-link media-preview-trigger"
+              @click="openOriginalMediaPreview('image', siteContent.sections.handDrawn.image.downloadUrl, siteContent.meta.mediaDownloadLabels.image)"
             >
               {{ siteContent.meta.mediaDownloadLabels.image }}
-            </a>
+            </button>
           </p>
         </article>
       </section>
@@ -1101,15 +1137,14 @@ onBeforeUnmount(() => {
               playsinline
               preload="none"
             />
-            <a
+            <button
               v-if="resolveDownloadSrc(siteContent.sections.tutorial.video.downloadUrl)"
-              class="media-download-link media-download-overlay"
-              :href="resolveDownloadSrc(siteContent.sections.tutorial.video.downloadUrl)"
-              target="_blank"
-              rel="noopener noreferrer"
+              type="button"
+              class="media-download-link media-download-overlay media-preview-trigger"
+              @click="openOriginalMediaPreview('video', siteContent.sections.tutorial.video.downloadUrl, siteContent.meta.mediaDownloadLabels.video)"
             >
               {{ siteContent.meta.mediaDownloadLabels.video }}
-            </a>
+            </button>
           </div>
         </div>
       </section>
@@ -1536,6 +1571,54 @@ onBeforeUnmount(() => {
       </div>
     </Transition>
 
+    <Transition name="media-preview-modal">
+      <div v-if="originalPreviewVisible" class="original-media-overlay" @click="closeOriginalMediaPreview">
+        <div class="original-media-card" @click.stop>
+          <h3 class="original-media-title">
+            {{ originalPreviewMedia.title || getOriginalPreviewTitle(originalPreviewMedia.type) }}
+          </h3>
+          <div class="original-media-stage">
+            <img
+              v-if="originalPreviewMedia.type === 'image'"
+              :src="originalPreviewMedia.src"
+              :alt="getOriginalPreviewTitle('image')"
+              class="original-media-image"
+            />
+            <video
+              v-else
+              :src="originalPreviewMedia.src"
+              class="original-media-video"
+              controls
+              playsinline
+              preload="metadata"
+            />
+          </div>
+          <div class="original-media-actions">
+            <a
+              class="pill-btn pill-btn-paper original-media-btn"
+              :href="originalPreviewMedia.downloadUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              download
+            >
+              {{ siteContent.meta.mediaPreviewActions.download }}
+            </a>
+            <a
+              class="pill-btn original-media-btn"
+              :href="originalPreviewMedia.downloadUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {{ siteContent.meta.mediaPreviewActions.openInNewTab }}
+            </a>
+            <button type="button" class="pill-btn original-media-btn" @click="closeOriginalMediaPreview">
+              {{ siteContent.meta.mediaPreviewActions.close }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
     <Transition name="fade-modal">
       <div v-if="comingSoonVisible" class="coming-soon-overlay" @click="closeComingSoon">
         <div class="coming-soon-card" @click.stop>
@@ -1591,6 +1674,7 @@ onBeforeUnmount(() => {
   --result-video-top-item-width: 45%;
   --result-video-top-item-aspect-ratio: 16 / 5;
   --result-video-bottom-aspect-ratio: 1714 / 858;
+  --result-video-1-scale: 1.04;
   --hero-video-aspect-ratio: 700 / 460;
   min-height: 100vh;
   color: var(--text-main);
@@ -1891,6 +1975,7 @@ onBeforeUnmount(() => {
 .video-card-result_video_1 {
   flex: 0 0 var(--result-video-top-item-width);
   aspect-ratio: var(--result-video-top-item-aspect-ratio);
+  overflow: hidden;
 }
 
 .video-card-result_video_2 {
@@ -1906,6 +1991,11 @@ onBeforeUnmount(() => {
 .video-card-wide .section-video {
   height: 100%;
   min-height: 0;
+}
+
+.result-video-1-zoom {
+  transform: scale(var(--result-video-1-scale));
+  transform-origin: left center;
 }
 
 .dataset-layout {
@@ -2041,6 +2131,10 @@ onBeforeUnmount(() => {
   justify-content: flex-end;
 }
 
+.performance-action-row {
+  margin-top: 4px;
+}
+
 .media-download-link {
   color: #1f67cf;
   text-decoration: none;
@@ -2051,6 +2145,14 @@ onBeforeUnmount(() => {
 
 .media-download-link:hover {
   text-decoration: underline;
+}
+
+.media-preview-trigger {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
 }
 
 .media-download-overlay {
@@ -2065,9 +2167,87 @@ onBeforeUnmount(() => {
   box-shadow: 0 4px 12px rgba(28, 47, 79, 0.14);
 }
 
-.ext-space-image {
-  aspect-ratio: 664 / 262;
-  object-fit: cover;
+.ext-large-image {
+  max-height: none;
+  width: 100%;
+}
+
+.original-media-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 97;
+  background: rgba(18, 31, 52, 0.58);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.original-media-card {
+  width: min(1240px, 96vw);
+  max-height: 90vh;
+  background: #f8fbff;
+  border: 1px solid rgba(73, 111, 169, 0.32);
+  box-shadow: 0 20px 48px rgba(14, 35, 68, 0.3);
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.original-media-title {
+  margin: 0;
+  padding: 14px 18px;
+  font-size: clamp(16px, 1.25vw, 22px);
+  color: #183154;
+  background: linear-gradient(180deg, rgba(139, 174, 223, 0.28), rgba(139, 174, 223, 0));
+  border-bottom: 1px solid rgba(73, 111, 169, 0.24);
+}
+
+.original-media-stage {
+  padding: 14px;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  overflow: auto;
+}
+
+.original-media-image,
+.original-media-video {
+  max-width: 100%;
+  max-height: calc(90vh - 210px);
+  width: auto;
+  height: auto;
+  border: 1px solid var(--line);
+}
+
+.original-media-image {
+  background: transparent;
+}
+
+.original-media-video {
+  background: #000;
+}
+
+.original-media-actions {
+  padding: 12px 14px 14px;
+  border-top: 1px solid rgba(73, 111, 169, 0.22);
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  background: #f7fbff;
+}
+
+.original-media-btn {
+  min-height: 38px;
+  padding: 0 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
 }
 
 .declaration-text {
@@ -2714,6 +2894,23 @@ onBeforeUnmount(() => {
   .performance-image {
     width: 100%;
     max-width: 100%;
+  }
+
+  .original-media-overlay {
+    padding: 12px;
+  }
+
+  .original-media-card {
+    width: 100%;
+    max-height: 92vh;
+  }
+
+  .original-media-actions {
+    justify-content: stretch;
+  }
+
+  .original-media-btn {
+    width: 100%;
   }
 
   .dataset-label-row,
