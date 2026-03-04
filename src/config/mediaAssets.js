@@ -1,15 +1,31 @@
-const OSS_BASE_URL = 'https://thesis-display-oss-bucket.sylg.chat'
-const PREVIEW_PREFIX = 'public_min'
-const ORIGINAL_PREFIX = 'public'
+const DEFAULT_OSS_BASE_URL = 'https://thesis-display-oss-bucket.sylg.chat'
+const PREVIEW_BASE_URL = normalizeBaseUrl(import.meta.env.VITE_OSS_PREVIEW_BASE_URL || DEFAULT_OSS_BASE_URL)
+const DOWNLOAD_BASE_URL = normalizeBaseUrl(
+  import.meta.env.VITE_OSS_DOWNLOAD_BASE_URL || PREVIEW_BASE_URL,
+)
+const PREVIEW_PREFIX = normalizePrefix(import.meta.env.VITE_OSS_PREVIEW_PREFIX || 'public_min')
+const DOWNLOAD_PREFIX = normalizePrefix(import.meta.env.VITE_OSS_DOWNLOAD_PREFIX || 'public')
 
-function ossAsset(prefix, path) {
-  return encodeURI(`${OSS_BASE_URL}/${prefix}/${path}`)
+function normalizeBaseUrl(baseUrl) {
+  return String(baseUrl || '').replace(/\/+$/, '')
+}
+
+function normalizePrefix(prefix) {
+  return String(prefix || '')
+    .trim()
+    .replace(/^\/+/, '')
+    .replace(/\/+$/, '')
+}
+
+function buildOssAsset(baseUrl, prefix, path) {
+  const normalizedPath = String(path || '').replace(/^\/+/, '')
+  return encodeURI(`${baseUrl}/${prefix}/${normalizedPath}`)
 }
 
 function createMediaAsset(path, originalPath = path) {
   return {
-    previewUrl: ossAsset(PREVIEW_PREFIX, path),
-    downloadUrl: ossAsset(ORIGINAL_PREFIX, originalPath),
+    previewUrl: buildOssAsset(PREVIEW_BASE_URL, PREVIEW_PREFIX, path),
+    downloadUrl: buildOssAsset(DOWNLOAD_BASE_URL, DOWNLOAD_PREFIX, originalPath),
   }
 }
 
