@@ -787,6 +787,21 @@ function resolveDownloadSrc(src) {
   return sanitizeDownloadUrlForAnonymousOss(resolved)
 }
 
+function stripBlockedResponseOverrideQuery(rawUrl) {
+  if (!rawUrl) {
+    return ''
+  }
+
+  return rawUrl
+    .replace(
+      /([?&])response-content-(?:type|language|expires|cache-control|disposition|encoding)=[^&#]*/gi,
+      '$1',
+    )
+    .replace(/\?&/g, '?')
+    .replace(/[?&](?=#|$)/g, '')
+    .replace(/\?$/, '')
+}
+
 function sanitizeDownloadUrlForAnonymousOss(rawUrl) {
   if (!rawUrl) {
     return ''
@@ -805,15 +820,15 @@ function sanitizeDownloadUrlForAnonymousOss(rawUrl) {
     }
 
     if (!removed) {
-      return rawUrl
+      return stripBlockedResponseOverrideQuery(rawUrl)
     }
 
     if (/^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//.test(rawUrl)) {
-      return parsed.toString()
+      return stripBlockedResponseOverrideQuery(parsed.toString())
     }
-    return `${parsed.pathname}${parsed.search}${parsed.hash}`
+    return stripBlockedResponseOverrideQuery(`${parsed.pathname}${parsed.search}${parsed.hash}`)
   } catch {
-    return rawUrl
+    return stripBlockedResponseOverrideQuery(rawUrl)
   }
 }
 
@@ -1045,7 +1060,7 @@ function triggerLocalDownload(downloadHref, fileName) {
 }
 
 async function downloadOriginalMedia() {
-  const sourceUrl = resolveDownloadSrc(originalPreviewMedia.value.downloadUrl)
+  const sourceUrl = stripBlockedResponseOverrideQuery(resolveDownloadSrc(originalPreviewMedia.value.downloadUrl))
   if (!sourceUrl || originalPreviewDownloading.value) {
     return
   }
@@ -1909,7 +1924,7 @@ onBeforeUnmount(() => {
             </button>
             <a
               class="pill-btn original-media-btn"
-              :href="originalPreviewMedia.downloadUrl"
+              :href="resolveDownloadSrc(originalPreviewMedia.downloadUrl)"
               target="_blank"
               rel="noopener noreferrer"
             >
