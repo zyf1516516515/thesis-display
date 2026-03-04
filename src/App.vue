@@ -1,10 +1,10 @@
 ﻿<script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { siteContent } from './config/siteContent'
-import { buildContactMailPayload, buildDatasetMailPayload, resolveMailFailureAlert, submissionMailConfig } from './config/submissionMailConfig'
+import { resolveMailFailureAlert, submissionMailConfig } from './config/submissionMailConfig'
 import { getNavAction, getVideoPlaybackMode } from './utils/navigation'
 import { extractAnchorFromHash, resolveMediaSrc } from './utils/mediaResolver'
-import { sendSubmissionMail } from './utils/submissionMailer'
+import { submitContact, submitDataset } from './utils/submissionApi'
 
 const comingSoonVisible = ref(false)
 const comingSoonMessage = ref(siteContent.meta.comingSoonMessage || '正在开发中')
@@ -33,6 +33,8 @@ const MANUAL_INPUT_VALUE = '__manual_input__'
 const DNS_TIMEOUT_MS = 5000
 const URL_TIMEOUT_MS = 6000
 const DOWNLOAD_FETCH_TIMEOUT_MS = 45000
+const CHECK_CACHE_TTL_MS = 5 * 60 * 1000
+const MAX_COVER_DATA_URL_LENGTH = 100000
 const ANONYMOUS_OSS_BLOCKED_RESPONSE_OVERRIDE_PARAMS = new Set([
   'response-content-type',
   'response-content-language',
@@ -42,6 +44,7 @@ const ANONYMOUS_OSS_BLOCKED_RESPONSE_OVERRIDE_PARAMS = new Set([
   'response-content-encoding',
 ])
 const OSS_SIGNED_URL_PARAM_PATTERN = /[?&](?:OSSAccessKeyId|Signature|Expires|x-oss-signature|x-oss-credential|x-oss-date|x-oss-expires|x-oss-security-token)=/i
+const BACKEND_FIELD_ERROR_PATTERN = /^([^:]+):\s*(.+)$/
 
 function createEmptyOriginalPreviewMedia() {
   return {
@@ -107,6 +110,8 @@ const HEADER_OFFSET = 94
 const logoSrc = computed(() => resolveMediaSrc(siteContent.meta.logoUrl))
 const NON_HERO_VIDEO_KEYS = ['result_video_1', 'result_video_2', 'result_video_3', 'tutorial_video']
 const lazyVideoLoadedKeys = ref(new Set())
+const dnsCheckCache = new Map()
+const urlReachabilityCache = new Map()
 let lazyVideoObserver = null
 let originalPreviewFetchController = null
 let originalPreviewObjectUrl = ''
@@ -153,7 +158,101 @@ function openDatasetValidationAlert(errors, title = submissionMailConfig.message
   datasetValidationVisible.value = true
 }
 
+function createRequestId(prefix) {
+  const safePrefix = String(prefix || 'submit').trim() || 'submit'
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `${safePrefix}-${crypto.randomUUID()}`
+  }
+  const randomPart = Math.random().toString(36).slice(2, 10)
+  return `${safePrefix}-${Date.now()}-${randomPart}`
+}
+
+function parseBackendFieldErrors(sendResult) {
+  if (String(sendResult?.code || '') !== 'INVALID_PAYLOAD' || !Array.isArray(sendResult?.details)) {
+    return []
+  }
+
+  return sendResult.details
+    .map((item) => {
+      const raw = String(item || '').trim()
+      if (!raw) {
+        return null
+      }
+      const match = raw.match(BACKEND_FIELD_ERROR_PATTERN)
+      if (!match) {
+        return { field: '', message: raw }
+      }
+      return {
+        field: String(match[1] || '').trim(),
+        message: String(match[2] || '').trim() || raw,
+      }
+    })
+    .filter(Boolean)
+}
+
+function applyDatasetFieldErrorsFromBackend(fieldErrors) {
+  fieldErrors.forEach(({ field, message }) => {
+    switch (field) {
+      case 'datasetName':
+      case 'shortDescription':
+      case 'dataFormatScale':
+      case 'usageLicense':
+      case 'citationMethod':
+        setDatasetFieldCheck(field, 'invalid', message)
+        break
+      case 'cloudStorageLink1':
+        setLinkCheck(0, 'invalid', message)
+        setDatasetFieldCheck('cloudStorageLinks', 'invalid', message)
+        break
+      case 'cloudStorageLink2':
+        setLinkCheck(1, 'invalid', message)
+        setDatasetFieldCheck('cloudStorageLinks', 'invalid', message)
+        break
+      case 'coverImageName':
+      case 'coverImageDataUrl':
+        setDatasetFieldCheck('coverImage', 'invalid', message)
+        break
+      case 'userEmail':
+        emailCheck.value = createCheckState('invalid', message)
+        break
+      default:
+        break
+    }
+  })
+}
+
+function applyContactFieldErrorsFromBackend(fieldErrors) {
+  fieldErrors.forEach(({ field, message }) => {
+    switch (field) {
+      case 'subject':
+      case 'content':
+        setContactFieldCheck(field, 'invalid', message)
+        break
+      case 'userEmail':
+        contactEmailCheck.value = createCheckState('invalid', message)
+        break
+      default:
+        break
+    }
+  })
+}
+
+function applyBackendFieldErrors(sendResult, submitType) {
+  const fieldErrors = parseBackendFieldErrors(sendResult)
+  if (!fieldErrors.length) {
+    return
+  }
+
+  if (submitType === 'contact_submission') {
+    applyContactFieldErrorsFromBackend(fieldErrors)
+    return
+  }
+
+  applyDatasetFieldErrorsFromBackend(fieldErrors)
+}
+
 function openMailFailureAlert(sendResult, submitType) {
+  applyBackendFieldErrors(sendResult, submitType)
   const alertPayload = resolveMailFailureAlert(sendResult, submitType)
   openDatasetValidationAlert(alertPayload.errors, alertPayload.title, alertPayload.description)
 }
@@ -251,6 +350,10 @@ function validateRequiredTextField(fieldKey, label) {
 function validateCoverImage() {
   if (!datasetForm.value.coverImagePreview) {
     setDatasetFieldCheck('coverImage', 'invalid', 'Please upload one cover image.')
+    return false
+  }
+  if (datasetForm.value.coverImageDataUrl && datasetForm.value.coverImageDataUrl.length > MAX_COVER_DATA_URL_LENGTH) {
+    setDatasetFieldCheck('coverImage', 'invalid', 'Cover image is too large for submission. Please upload a smaller image.')
     return false
   }
   setDatasetFieldCheck('coverImage', 'valid', '')
@@ -413,20 +516,53 @@ async function fetchWithTimeout(url, options, timeoutMs) {
   }
 }
 
+function getCachedValidationResult(cacheMap, key) {
+  const cached = cacheMap.get(key)
+  if (!cached) {
+    return null
+  }
+  if (cached.expiresAt <= Date.now()) {
+    cacheMap.delete(key)
+    return null
+  }
+  return { ...cached.result }
+}
+
+function setCachedValidationResult(cacheMap, key, result) {
+  cacheMap.set(key, {
+    expiresAt: Date.now() + CHECK_CACHE_TTL_MS,
+    result: { ...result },
+  })
+}
+
 async function checkUrlReachability(targetUrl) {
+  const cacheKey = String(targetUrl || '').trim()
+  const cached = getCachedValidationResult(urlReachabilityCache, cacheKey)
+  if (cached) {
+    return cached
+  }
+
   if (window.location.protocol === 'https:' && targetUrl.startsWith('http://')) {
-    return { ok: false, reason: 'HTTP links are blocked on HTTPS pages.' }
+    const blocked = { ok: false, reason: 'HTTP links are blocked on HTTPS pages.' }
+    setCachedValidationResult(urlReachabilityCache, cacheKey, blocked)
+    return blocked
   }
 
   try {
     await fetchWithTimeout(targetUrl, { method: 'HEAD', mode: 'no-cors', cache: 'no-store' }, URL_TIMEOUT_MS)
-    return { ok: true, reason: 'URL format and reachability check passed.' }
+    const passed = { ok: true, reason: 'URL format and reachability check passed.' }
+    setCachedValidationResult(urlReachabilityCache, cacheKey, passed)
+    return passed
   } catch {
     try {
       await fetchWithTimeout(targetUrl, { method: 'GET', mode: 'no-cors', cache: 'no-store' }, URL_TIMEOUT_MS)
-      return { ok: true, reason: 'URL format and reachability check passed.' }
+      const passed = { ok: true, reason: 'URL format and reachability check passed.' }
+      setCachedValidationResult(urlReachabilityCache, cacheKey, passed)
+      return passed
     } catch {
-      return { ok: false, reason: 'URL is not reachable.' }
+      const failed = { ok: false, reason: 'URL is not reachable.' }
+      setCachedValidationResult(urlReachabilityCache, cacheKey, failed)
+      return failed
     }
   }
 }
@@ -494,6 +630,12 @@ async function validateCloudLinksBeforeSubmit() {
 }
 
 async function queryDnsRecord(domain, recordType) {
+  const cacheKey = `${recordType}:${domain}`
+  const cached = getCachedValidationResult(dnsCheckCache, cacheKey)
+  if (cached) {
+    return cached
+  }
+
   const providers = [
     `https://dns.google/resolve?name=${encodeURIComponent(domain)}&type=${recordType}`,
     `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(domain)}&type=${recordType}`,
@@ -517,10 +659,14 @@ async function queryDnsRecord(domain, recordType) {
       const hasRecord = answers.some((item) => Number(item.type) === expectedType)
 
       if (Number(payload.Status) === 3) {
-        return { ok: false, providerReached: true, reason: 'Email domain does not exist.' }
+        const result = { ok: false, providerReached: true, reason: 'Email domain does not exist.' }
+        setCachedValidationResult(dnsCheckCache, cacheKey, result)
+        return result
       }
       if (hasRecord) {
-        return { ok: true, providerReached: true }
+        const result = { ok: true, providerReached: true }
+        setCachedValidationResult(dnsCheckCache, cacheKey, result)
+        return result
       }
     } catch {
       // try next provider
@@ -528,9 +674,13 @@ async function queryDnsRecord(domain, recordType) {
   }
 
   if (!providerReached) {
-    return { ok: false, providerReached: false, reason: 'Email domain reachability check failed.' }
+    const result = { ok: false, providerReached: false, reason: 'Email domain reachability check failed.' }
+    setCachedValidationResult(dnsCheckCache, cacheKey, result)
+    return result
   }
-  return { ok: false, providerReached: true, reason: '' }
+  const result = { ok: false, providerReached: true, reason: '' }
+  setCachedValidationResult(dnsCheckCache, cacheKey, result)
+  return result
 }
 
 async function validateEmailAddress(currentValue, required, requiredMessage) {
@@ -644,16 +794,19 @@ async function submitDatasetSubmission() {
   }
 
   datasetSubmitting.value = true
-  const mailPayload = buildDatasetMailPayload({
-    ...datasetForm.value,
+  const sendResult = await submitDataset({
+    requestId: createRequestId('dataset'),
     userEmail: datasetForm.value.userEmail.trim(),
-  })
-  const sendResult = await sendSubmissionMail({
-    userEmail: datasetForm.value.userEmail.trim(),
-    submitType: 'dataset_submission',
-    subject: mailPayload.subject,
-    html: mailPayload.html,
-    text: mailPayload.text,
+    locale: submissionMailConfig.api.defaultLocale,
+    datasetName: datasetForm.value.datasetName.trim(),
+    shortDescription: datasetForm.value.shortDescription.trim(),
+    dataFormatScale: datasetForm.value.dataFormatScale.trim(),
+    cloudStorageLink1: datasetForm.value.cloudStorageLink1.trim(),
+    cloudStorageLink2: datasetForm.value.cloudStorageLink2.trim(),
+    usageLicense: datasetForm.value.usageLicense.trim(),
+    citationMethod: datasetForm.value.citationMethod.trim(),
+    coverImageName: datasetForm.value.coverImageName.trim(),
+    coverImageDataUrl: datasetForm.value.coverImageDataUrl || '',
   })
   datasetSubmitting.value = false
 
@@ -664,6 +817,10 @@ async function submitDatasetSubmission() {
 
   closeDatasetSubmissionModal()
   resetDatasetForm()
+  if (sendResult.code === 'PARTIAL_SUCCESS_ADMIN_RETRYING') {
+    openNotice(`${submissionMailConfig.messages.datasetSuccess}\n${submissionMailConfig.messages.partialSuccessWarning}`)
+    return
+  }
   openNotice(submissionMailConfig.messages.datasetSuccess)
 }
 
@@ -709,16 +866,12 @@ async function submitContactForm() {
   }
 
   contactSubmitting.value = true
-  const mailPayload = buildContactMailPayload({
-    ...contactForm.value,
+  const sendResult = await submitContact({
+    requestId: createRequestId('contact'),
     userEmail: contactForm.value.userEmail.trim(),
-  })
-  const sendResult = await sendSubmissionMail({
-    userEmail: contactForm.value.userEmail.trim(),
-    submitType: 'contact_submission',
-    subject: mailPayload.subject,
-    html: mailPayload.html,
-    text: mailPayload.text,
+    locale: submissionMailConfig.api.defaultLocale,
+    subject: contactForm.value.subject.trim(),
+    content: contactForm.value.content.trim(),
   })
   contactSubmitting.value = false
 
@@ -729,6 +882,10 @@ async function submitContactForm() {
 
   closeContactModal()
   resetContactForm()
+  if (sendResult.code === 'PARTIAL_SUCCESS_ADMIN_RETRYING') {
+    openNotice(`${submissionMailConfig.messages.contactSuccess}\n${submissionMailConfig.messages.partialSuccessWarning}`)
+    return
+  }
   openNotice(submissionMailConfig.messages.contactSuccess)
 }
 

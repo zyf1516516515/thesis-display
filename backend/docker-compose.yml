@@ -1,0 +1,54 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: thesis-mail-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-zyf.1023}
+      MYSQL_DATABASE: ${DB_NAME:-thesis_mail}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: thesis-display-backend:latest
+    container_name: thesis-mail-backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      APP_PORT: ${APP_PORT:-8080}
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:-thesis_mail}
+      DB_USER: ${DB_USER:-root}
+      DB_PASSWORD: ${DB_PASSWORD:-zyf.1023}
+      MAIL_HOST: ${MAIL_HOST:-smtp.163.com}
+      MAIL_PORT: ${MAIL_PORT:-465}
+      MAIL_USERNAME: ${MAIL_USERNAME:-m15754335963@163.com}
+      MAIL_SMTP_PASSWORD: ${MAIL_SMTP_PASSWORD}
+      MAIL_SENDER_EMAIL: ${MAIL_SENDER_EMAIL:-m15754335963@163.com}
+      MAIL_TARGET_EMAIL: ${MAIL_TARGET_EMAIL:-2401284861@qq.com}
+      MAIL_DEFAULT_LOCALE: ${MAIL_DEFAULT_LOCALE:-en}
+      MAIL_QUOTA_ZONE: ${MAIL_QUOTA_ZONE:-UTC}
+      MAIL_DAILY_LIMIT: ${MAIL_DAILY_LIMIT:-5}
+      MAIL_MONTHLY_LIMIT: ${MAIL_MONTHLY_LIMIT:-10}
+      APP_ALLOWED_ORIGINS: ${APP_ALLOWED_ORIGINS:-https://zyf1516516515.github.io,http://localhost:5173}
+      MAIL_RETRY_DELAYS_SECONDS: ${MAIL_RETRY_DELAYS_SECONDS:-60,300,900,3600,21600}
+      MAIL_RETRY_BATCH_SIZE: ${MAIL_RETRY_BATCH_SIZE:-20}
+      MAIL_RETRY_POLL_INTERVAL_MS: ${MAIL_RETRY_POLL_INTERVAL_MS:-30000}
+    ports:
+      - "${APP_PORT:-8080}:8080"
+
+volumes:
+  mysql_data:

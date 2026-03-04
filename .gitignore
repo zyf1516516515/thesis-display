@@ -36,3 +36,7 @@ PDF样本
 
 # Vitest
 __screenshots__/
+
+# Backend
+backend/target/
+backend/.env
