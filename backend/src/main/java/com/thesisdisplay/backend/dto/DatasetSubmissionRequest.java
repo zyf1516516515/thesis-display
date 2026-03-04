@@ -44,7 +44,8 @@ public class DatasetSubmissionRequest {
     @Size(max = 260)
     private String coverImageName;
 
-    @Size(max = 100000)
+    // 5MB binary image encoded as data URL is roughly <= 7MB text payload.
+    @Size(max = 7000000)
     private String coverImageDataUrl;
 
     public String getRequestId() {

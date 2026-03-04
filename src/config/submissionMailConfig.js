@@ -1,4 +1,4 @@
-const DEFAULT_MAIL_API_BASE = 'http://38.76.219.201:8080'
+const DEFAULT_MAIL_API_BASE = 'https://thesis-display-mail.sylg.chat'
 
 function normalizeBaseUrl(rawUrl) {
   const url = String(rawUrl || '').trim()

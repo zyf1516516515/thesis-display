@@ -22,7 +22,7 @@ public class MailTemplateService {
 
     private static final DateTimeFormatter TS_FMT = DateTimeFormatter.ISO_OFFSET_DATE_TIME;
     private static final String COVER_INLINE_CID = "dataset-cover-image";
-    private static final int MAX_INLINE_IMAGE_BYTES = 2 * 1024 * 1024;
+    private static final int MAX_INLINE_IMAGE_BYTES = 5 * 1024 * 1024;
     private final MailServiceProperties properties;
 
     public MailTemplateService(MailServiceProperties properties) {

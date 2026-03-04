@@ -34,7 +34,8 @@ const DNS_TIMEOUT_MS = 5000
 const URL_TIMEOUT_MS = 6000
 const DOWNLOAD_FETCH_TIMEOUT_MS = 45000
 const CHECK_CACHE_TTL_MS = 5 * 60 * 1000
-const MAX_COVER_DATA_URL_LENGTH = 100000
+const MAX_COVER_IMAGE_BYTES = 5 * 1024 * 1024
+const MAX_COVER_DATA_URL_LENGTH = Math.ceil((MAX_COVER_IMAGE_BYTES * 4) / 3) + 2048
 const ANONYMOUS_OSS_BLOCKED_RESPONSE_OVERRIDE_PARAMS = new Set([
   'response-content-type',
   'response-content-language',
@@ -67,6 +68,7 @@ function createEmptyDatasetForm() {
     userEmail: '',
     coverImageName: '',
     coverImagePreview: '',
+    coverImageSizeBytes: 0,
     coverImageDataUrl: '',
   }
 }
@@ -279,20 +281,25 @@ function handleCoverChange(event) {
   if (!file) {
     datasetForm.value.coverImageName = ''
     datasetForm.value.coverImagePreview = ''
+    datasetForm.value.coverImageSizeBytes = 0
+    datasetForm.value.coverImageDataUrl = ''
+    validateCoverImage()
+    return
+  }
+  datasetForm.value.coverImageName = file.name
+  datasetForm.value.coverImagePreview = URL.createObjectURL(file)
+  datasetForm.value.coverImageSizeBytes = file.size
+  if (file.size > MAX_COVER_IMAGE_BYTES) {
     datasetForm.value.coverImageDataUrl = ''
     validateCoverImage()
     return
   }
   const reader = new FileReader()
   reader.onload = () => {
-    datasetForm.value.coverImageName = file.name
-    datasetForm.value.coverImagePreview = URL.createObjectURL(file)
     datasetForm.value.coverImageDataUrl = typeof reader.result === 'string' ? reader.result : ''
     validateCoverImage()
   }
   reader.onerror = () => {
-    datasetForm.value.coverImageName = file.name
-    datasetForm.value.coverImagePreview = URL.createObjectURL(file)
     datasetForm.value.coverImageDataUrl = ''
     validateCoverImage()
   }
@@ -350,6 +357,10 @@ function validateRequiredTextField(fieldKey, label) {
 function validateCoverImage() {
   if (!datasetForm.value.coverImagePreview) {
     setDatasetFieldCheck('coverImage', 'invalid', 'Please upload one cover image.')
+    return false
+  }
+  if (datasetForm.value.coverImageSizeBytes > MAX_COVER_IMAGE_BYTES) {
+    setDatasetFieldCheck('coverImage', 'invalid', 'Cover image is too large for submission. Maximum size is 5 MB.')
     return false
   }
   if (datasetForm.value.coverImageDataUrl && datasetForm.value.coverImageDataUrl.length > MAX_COVER_DATA_URL_LENGTH) {
