@@ -15,7 +15,7 @@ function createMediaAsset(path, originalPath = path) {
 
 export const mediaAssets = {
   meta: {
-    logo: createMediaAsset('images/logo_rembg.png'),
+    logo: createMediaAsset('images/preview_q1/meta_logo.png', 'images/logo_rembg.png'),
     favicon: createMediaAsset('logo.ico'),
   },
   hero: {
@@ -23,7 +23,7 @@ export const mediaAssets = {
   },
   performance: {
     demoImage: createMediaAsset(
-      'images/Demonstration of improved imaging effect.webp',
+      'images/preview_q1/performance_demoImage.png',
       'images/Demonstration of improved imaging effect.svg',
     ),
   },
@@ -31,42 +31,42 @@ export const mediaAssets = {
     video1: createMediaAsset('videos/segment_last_30_merged_mini_h264.mp4'),
     video2: createMediaAsset('videos/SAM20M_endoscopy_00_EndoVis_2017_RIS_merged_h264.mp4'),
     video3: createMediaAsset('videos/屏幕录制 2026-02-13 160516.mp4'),
-    video3Poster: createMediaAsset('videos/屏幕录制-封面.png'),
+    video3Poster: createMediaAsset('images/preview_q1/resultVideo_video3Poster.png', 'videos/屏幕录制-封面.png'),
   },
   dataset: {
-    previewImage: createMediaAsset('images/Enhancement behavior dataset.svg'),
+    previewImage: createMediaAsset('images/preview_q1/dataset_previewImage.png', 'images/Enhancement behavior dataset.svg'),
   },
   extensibility: {
     integratedCircuit: createMediaAsset(
-      'images/Integrated circuit.webp',
+      'images/preview_q1/extensibility_integratedCircuit.png',
       'images/Integrated circuit.svg',
     ),
-    metallographicAnalysis: createMediaAsset('images/metallographic analysis.svg'),
+    metallographicAnalysis: createMediaAsset('images/preview_q1/extensibility_metallographicAnalysis.png', 'images/metallographic analysis.svg'),
     droneAerial: createMediaAsset(
-      'images/Drone aerial photography.webp',
+      'images/preview_q1/extensibility_droneAerial.png',
       'images/Drone aerial photography.svg',
     ),
     underwaterDrone: createMediaAsset(
-      'images/Underwater drone.webp',
+      'images/preview_q1/extensibility_underwaterDrone.png',
       'images/Underwater drone.svg',
     ),
     agriculturalRobot: createMediaAsset(
-      'images/Agricultural harvesting robot perspective.webp',
+      'images/preview_q1/extensibility_agriculturalRobot.png',
       'images/Agricultural harvesting robot perspective.svg',
     ),
     spaceExploration: createMediaAsset(
-      'images/Space exploration.webp',
+      'images/preview_q1/extensibility_spaceExploration.png',
       'images/Space exploration.svg',
     ),
   },
   handDrawn: {
     image: createMediaAsset(
-      'images/Hand drawn circuit diagram.webp',
+      'images/preview_q1/handDrawn_image.png',
       'images/Hand drawn circuit diagram.svg',
     ),
   },
   tutorial: {
     video: createMediaAsset('videos/System_Usage_Tutorial_h264.mp4'),
-    poster: createMediaAsset('videos/System_Usage_Tutorial_h264-封面.jpg'),
+    poster: createMediaAsset('images/preview_q1/tutorial_poster.png', 'videos/System_Usage_Tutorial_h264-封面.jpg'),
   },
 }
