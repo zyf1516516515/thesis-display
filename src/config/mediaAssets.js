@@ -22,7 +22,10 @@ export const mediaAssets = {
     mainVideo: createMediaAsset('videos/enhance_wipe_cell_1080p_h264.mp4'),
   },
   performance: {
-    demoImage: createMediaAsset('images/Demonstration of improved imaging effect.svg'),
+    demoImage: createMediaAsset(
+      'images/Demonstration of improved imaging effect.webp',
+      'images/Demonstration of improved imaging effect.svg',
+    ),
   },
   resultVideo: {
     video1: createMediaAsset('videos/segment_last_30_merged_mini_h264.mp4'),
@@ -34,15 +37,33 @@ export const mediaAssets = {
     previewImage: createMediaAsset('images/Enhancement behavior dataset.svg'),
   },
   extensibility: {
-    integratedCircuit: createMediaAsset('images/Integrated circuit.svg'),
+    integratedCircuit: createMediaAsset(
+      'images/Integrated circuit.webp',
+      'images/Integrated circuit.svg',
+    ),
     metallographicAnalysis: createMediaAsset('images/metallographic analysis.svg'),
-    droneAerial: createMediaAsset('images/Drone aerial photography.svg'),
-    underwaterDrone: createMediaAsset('images/Underwater drone.svg'),
-    agriculturalRobot: createMediaAsset('images/Agricultural harvesting robot perspective.svg'),
-    spaceExploration: createMediaAsset('images/Space exploration.svg'),
+    droneAerial: createMediaAsset(
+      'images/Drone aerial photography.webp',
+      'images/Drone aerial photography.svg',
+    ),
+    underwaterDrone: createMediaAsset(
+      'images/Underwater drone.webp',
+      'images/Underwater drone.svg',
+    ),
+    agriculturalRobot: createMediaAsset(
+      'images/Agricultural harvesting robot perspective.webp',
+      'images/Agricultural harvesting robot perspective.svg',
+    ),
+    spaceExploration: createMediaAsset(
+      'images/Space exploration.webp',
+      'images/Space exploration.svg',
+    ),
   },
   handDrawn: {
-    image: createMediaAsset('images/Hand drawn circuit diagram.svg'),
+    image: createMediaAsset(
+      'images/Hand drawn circuit diagram.webp',
+      'images/Hand drawn circuit diagram.svg',
+    ),
   },
   tutorial: {
     video: createMediaAsset('videos/System_Usage_Tutorial_h264.mp4'),
