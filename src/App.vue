@@ -32,6 +32,7 @@ const LINK_FIELD_KEYS = ['cloudStorageLink1', 'cloudStorageLink2']
 const MANUAL_INPUT_VALUE = '__manual_input__'
 const DNS_TIMEOUT_MS = 5000
 const URL_TIMEOUT_MS = 6000
+const DOWNLOAD_FETCH_TIMEOUT_MS = 45000
 const ANONYMOUS_OSS_BLOCKED_RESPONSE_OVERRIDE_PARAMS = new Set([
   'response-content-type',
   'response-content-language',
@@ -1073,6 +1074,23 @@ function triggerLocalDownload(downloadHref, fileName) {
   anchor.remove()
 }
 
+function isCrossOriginUrl(rawUrl) {
+  if (!rawUrl) {
+    return false
+  }
+
+  try {
+    const base = typeof window !== 'undefined' ? window.location.href : 'https://example.com'
+    const parsed = new URL(rawUrl, base)
+    if (typeof window === 'undefined') {
+      return /^https?:\/\//.test(rawUrl)
+    }
+    return parsed.origin !== window.location.origin
+  } catch {
+    return /^https?:\/\//.test(rawUrl)
+  }
+}
+
 async function downloadOriginalMedia() {
   const sourceUrl = resolveDownloadSrc(originalPreviewMedia.value.downloadUrl)
   if (!sourceUrl || originalPreviewDownloading.value) {
@@ -1083,8 +1101,22 @@ async function downloadOriginalMedia() {
   originalPreviewDownloading.value = true
   originalPreviewDownloadError.value = ''
 
+  if (isCrossOriginUrl(sourceUrl)) {
+    // Prefer browser-native download for cross-origin files to avoid fetch/CORS/proxy failures on large assets.
+    try {
+      triggerLocalDownload(sourceUrl, fileName)
+    } catch {
+      originalPreviewDownloadError.value = 'Direct download failed. Please use Open in New Tab and Save As.'
+    } finally {
+      setTimeout(() => {
+        originalPreviewDownloading.value = false
+      }, 700)
+    }
+    return
+  }
+
   try {
-    const response = await fetch(sourceUrl)
+    const response = await fetchWithTimeout(sourceUrl, {}, DOWNLOAD_FETCH_TIMEOUT_MS)
     if (!response.ok) {
       throw new Error(`download request failed with status ${response.status}`)
     }
