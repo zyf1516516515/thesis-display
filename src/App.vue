@@ -24,6 +24,7 @@ const originalPreviewImageLoadedBytes = ref(0)
 const originalPreviewImageTotalBytes = ref(0)
 const originalPreviewImageSpeedBytesPerSec = ref(0)
 const originalPreviewImageStartedAtMs = ref(0)
+const originalPreviewDownloadError = ref('')
 const coverInputRef = ref(null)
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
 const URL_TOKEN_PATTERN = /https?:\/\/[^\s]+/gi
@@ -31,6 +32,14 @@ const LINK_FIELD_KEYS = ['cloudStorageLink1', 'cloudStorageLink2']
 const MANUAL_INPUT_VALUE = '__manual_input__'
 const DNS_TIMEOUT_MS = 5000
 const URL_TIMEOUT_MS = 6000
+const ANONYMOUS_OSS_BLOCKED_RESPONSE_OVERRIDE_PARAMS = new Set([
+  'response-content-type',
+  'response-content-language',
+  'response-expires',
+  'response-cache-control',
+  'response-content-disposition',
+  'response-content-encoding',
+])
 
 function createEmptyOriginalPreviewMedia() {
   return {
@@ -775,7 +784,37 @@ function resolvePosterSrc(src) {
 
 function resolveDownloadSrc(src) {
   const resolved = resolveMediaSrc(src)
-  return resolved || ''
+  return sanitizeDownloadUrlForAnonymousOss(resolved)
+}
+
+function sanitizeDownloadUrlForAnonymousOss(rawUrl) {
+  if (!rawUrl) {
+    return ''
+  }
+
+  try {
+    const base = typeof window !== 'undefined' ? window.location.href : 'https://example.com'
+    const parsed = new URL(rawUrl, base)
+    let removed = false
+
+    for (const key of [...parsed.searchParams.keys()]) {
+      if (ANONYMOUS_OSS_BLOCKED_RESPONSE_OVERRIDE_PARAMS.has(key.toLowerCase())) {
+        parsed.searchParams.delete(key)
+        removed = true
+      }
+    }
+
+    if (!removed) {
+      return rawUrl
+    }
+
+    if (/^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//.test(rawUrl)) {
+      return parsed.toString()
+    }
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`
+  } catch {
+    return rawUrl
+  }
 }
 
 function resetOriginalPreviewImageLoadState() {
@@ -786,6 +825,7 @@ function resetOriginalPreviewImageLoadState() {
   originalPreviewImageTotalBytes.value = 0
   originalPreviewImageSpeedBytesPerSec.value = 0
   originalPreviewImageStartedAtMs.value = 0
+  originalPreviewDownloadError.value = ''
 }
 
 function abortOriginalPreviewFetch() {
@@ -1005,13 +1045,14 @@ function triggerLocalDownload(downloadHref, fileName) {
 }
 
 async function downloadOriginalMedia() {
-  const sourceUrl = originalPreviewMedia.value.downloadUrl
+  const sourceUrl = resolveDownloadSrc(originalPreviewMedia.value.downloadUrl)
   if (!sourceUrl || originalPreviewDownloading.value) {
     return
   }
 
   const fileName = getFilenameFromUrl(sourceUrl, originalPreviewMedia.value.type)
   originalPreviewDownloading.value = true
+  originalPreviewDownloadError.value = ''
 
   try {
     const response = await fetch(sourceUrl)
@@ -1025,8 +1066,7 @@ async function downloadOriginalMedia() {
       URL.revokeObjectURL(blobUrl)
     }, 1000)
   } catch {
-    // Fallback keeps a visible path for manual save if browser blocks programmatic download.
-    window.open(sourceUrl, '_blank', 'noopener,noreferrer')
+    originalPreviewDownloadError.value = 'Direct download failed. Please use Open in New Tab and Save As.'
   } finally {
     originalPreviewDownloading.value = false
   }
@@ -1879,6 +1919,9 @@ onBeforeUnmount(() => {
               {{ siteContent.meta.mediaPreviewActions.close }}
             </button>
           </div>
+          <p v-if="originalPreviewDownloadError" class="original-media-download-error">
+            {{ originalPreviewDownloadError }}
+          </p>
         </div>
       </div>
     </Transition>
@@ -2580,6 +2623,15 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   text-decoration: none;
+}
+
+.original-media-download-error {
+  margin: 0;
+  padding: 0 14px 12px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #b03f3f;
+  font-weight: 600;
 }
 
 .declaration-text {
