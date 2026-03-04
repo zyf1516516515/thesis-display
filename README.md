@@ -42,6 +42,10 @@ npm run build
 The project separates preview resources and original-download resources in
 `src/config/mediaAssets.js`.
 
+Default behavior:
+- preview URLs use CDN domain `thesis-display-oss-bucket.sylg.chat`
+- download URLs use OSS origin domain `thesis-display-bucket.oss-ap-southeast-1.aliyuncs.com`
+
 Configure these environment variables in `.env.production`:
 
 ```dotenv
@@ -50,7 +54,7 @@ VITE_OSS_PREVIEW_PREFIX=public_min
 
 # Recommended: point this to a dedicated download domain/path configured to
 # return Content-Disposition: attachment.
-VITE_OSS_DOWNLOAD_BASE_URL=https://thesis-display-oss-bucket.sylg.chat
+VITE_OSS_DOWNLOAD_BASE_URL=https://thesis-display-bucket.oss-ap-southeast-1.aliyuncs.com
 VITE_OSS_DOWNLOAD_PREFIX=public
 ```
 
