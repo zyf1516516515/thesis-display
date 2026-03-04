@@ -40,6 +40,7 @@ const ANONYMOUS_OSS_BLOCKED_RESPONSE_OVERRIDE_PARAMS = new Set([
   'response-content-disposition',
   'response-content-encoding',
 ])
+const OSS_SIGNED_URL_PARAM_PATTERN = /[?&](?:OSSAccessKeyId|Signature|Expires|x-oss-signature|x-oss-credential|x-oss-date|x-oss-expires|x-oss-security-token)=/i
 
 function createEmptyOriginalPreviewMedia() {
   return {
@@ -787,6 +788,13 @@ function resolveDownloadSrc(src) {
   return sanitizeDownloadUrlForAnonymousOss(resolved)
 }
 
+function isLikelySignedOssUrl(rawUrl) {
+  if (!rawUrl) {
+    return false
+  }
+  return OSS_SIGNED_URL_PARAM_PATTERN.test(rawUrl)
+}
+
 function stripBlockedResponseOverrideQuery(rawUrl) {
   if (!rawUrl) {
     return ''
@@ -805,6 +813,12 @@ function stripBlockedResponseOverrideQuery(rawUrl) {
 function sanitizeDownloadUrlForAnonymousOss(rawUrl) {
   if (!rawUrl) {
     return ''
+  }
+
+  // Signed OSS URLs rely on query parameters for signature validation.
+  // Removing/normalizing these params may invalidate the signature.
+  if (isLikelySignedOssUrl(rawUrl)) {
+    return rawUrl
   }
 
   try {
@@ -1060,7 +1074,7 @@ function triggerLocalDownload(downloadHref, fileName) {
 }
 
 async function downloadOriginalMedia() {
-  const sourceUrl = stripBlockedResponseOverrideQuery(resolveDownloadSrc(originalPreviewMedia.value.downloadUrl))
+  const sourceUrl = resolveDownloadSrc(originalPreviewMedia.value.downloadUrl)
   if (!sourceUrl || originalPreviewDownloading.value) {
     return
   }
