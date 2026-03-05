@@ -211,10 +211,9 @@ function syncDatasetMetaAlignment() {
   }
 
   const paragraphTextBottom = getVisualTextBottom(paragraphEl)
-  const buttonTextBottom = getVisualTextBottom(googleButtonEl)
-  const delta = Math.round(paragraphTextBottom - buttonTextBottom)
-  // Only allow downward compensation to prevent the image area from covering labels/buttons.
-  datasetMetaShiftYPx.value = clampNumber(delta, 0, 320)
+  const buttonRect = googleButtonEl.getBoundingClientRect()
+  const delta = Math.round(paragraphTextBottom - buttonRect.bottom)
+  datasetMetaShiftYPx.value = clampNumber(delta, -60, 320)
 }
 
 function syncHeroAndDatasetLayout() {
@@ -1848,7 +1847,7 @@ onBeforeUnmount(() => {
         </div>
       </section>
 
-      <section class="shell block-section title-aligned-section">
+      <section class="shell block-section title-aligned-section balanced-text-section">
         <h2 class="section-title"><span class="title-mark">◼</span>{{ siteContent.sections.extensibility.title }}</h2>
         <div class="intro-lines text-rect">
           <p v-for="(line, index) in siteContent.sections.extensibility.introLines" :key="`ext-line-${index}`">{{ line }}</p>
@@ -1911,7 +1910,7 @@ onBeforeUnmount(() => {
         </article>
       </section>
 
-      <section class="shell block-section title-aligned-section">
+      <section class="shell block-section title-aligned-section balanced-text-section">
         <article class="panel-card compact">
           <h3 class="panel-subtitle">{{ siteContent.sections.handDrawn.title }}</h3>
           <div
@@ -1979,7 +1978,7 @@ onBeforeUnmount(() => {
         </div>
       </section>
 
-      <section class="shell block-section title-aligned-section">
+      <section class="shell block-section title-aligned-section balanced-text-section">
         <h2 class="section-title"><span class="title-mark">◼</span>{{ siteContent.sections.dataRelease.title }}</h2>
         <div class="intro-lines text-rect">
           <p v-for="(line, index) in siteContent.sections.dataRelease.lines" :key="`release-line-${index}`">{{ line }}</p>
@@ -1993,7 +1992,7 @@ onBeforeUnmount(() => {
         </button>
       </section>
 
-      <section :id="siteContent.sections.competition.id" class="shell block-section anchor-block title-aligned-section">
+      <section :id="siteContent.sections.competition.id" class="shell block-section anchor-block title-aligned-section balanced-text-section">
         <h2 class="section-title"><span class="title-mark">◼</span>{{ siteContent.sections.competition.title }}</h2>
         <div class="intro-lines text-rect">
           <p v-for="(line, index) in siteContent.sections.competition.lines" :key="`competition-line-${index}`">{{ line }}</p>
@@ -2007,7 +2006,7 @@ onBeforeUnmount(() => {
         </button>
       </section>
 
-      <section :id="siteContent.sections.declaration.id" class="shell block-section anchor-block title-aligned-section">
+      <section :id="siteContent.sections.declaration.id" class="shell block-section anchor-block title-aligned-section balanced-text-section">
         <h2 class="section-title"><span class="title-mark">◼</span>{{ siteContent.sections.declaration.title }}</h2>
         <p class="declaration-text text-rect">
           {{ siteContent.sections.declaration.paragraph }}
@@ -2527,8 +2526,9 @@ onBeforeUnmount(() => {
   --result-video-top-item-aspect-ratio: 16 / 5;
   --result-video-bottom-aspect-ratio: 1714 / 858;
   --result-video-1-scale: 1.1;
-  --hero-video-scale: 1.17;
-  --hero-video-object-position-x: 62%;
+  --hero-video-scale: 1.23;
+  --hero-video-object-position-x: 74%;
+  --hero-video-shift-x: 2.8%;
   min-height: 100vh;
   color: var(--text-main);
 }
@@ -2653,7 +2653,7 @@ onBeforeUnmount(() => {
 
 .content-mid-backdrop {
   position: relative;
-  margin-top: 0;
+  margin-top: 14px;
   padding: 6px 0 34px;
 }
 
@@ -2763,7 +2763,7 @@ onBeforeUnmount(() => {
   position: absolute;
   inset: 0;
   height: 100%;
-  transform: scale(var(--hero-video-scale));
+  transform: translateX(var(--hero-video-shift-x)) scale(var(--hero-video-scale));
   transform-origin: right center;
 }
 
@@ -3017,6 +3017,7 @@ onBeforeUnmount(() => {
 
 .dataset-text p {
   flex: 0 0 auto;
+  line-height: 1.68;
 }
 
 .dataset-text p,
@@ -3052,9 +3053,11 @@ onBeforeUnmount(() => {
 }
 
 .dataset-card-title {
-  margin-bottom: 12px;
+  margin: 0 auto 12px;
   font-size: clamp(16px, 1.3vw, 22px);
-  text-align: left;
+  width: var(--content-media-width);
+  max-width: 100%;
+  text-align: center;
 }
 
 .dataset-image {
@@ -3253,6 +3256,12 @@ onBeforeUnmount(() => {
 .title-aligned-section > :not(.section-title) {
   margin-left: 33px;
   width: calc(100% - 33px);
+}
+
+.balanced-text-section > :not(.section-title) {
+  margin-left: 33px;
+  margin-right: 33px;
+  width: calc(100% - 66px);
 }
 
 .section-cta-wide {
@@ -4011,8 +4020,9 @@ onBeforeUnmount(() => {
     --content-media-width: 100%;
     --result-video-top-item-width: 100%;
     --result-video-1-scale: 1.02;
-    --hero-video-scale: 1.04;
-    --hero-video-object-position-x: 56%;
+    --hero-video-scale: 1.08;
+    --hero-video-object-position-x: 64%;
+    --hero-video-shift-x: 1.2%;
   }
 
   .header-inner {
@@ -4088,6 +4098,12 @@ onBeforeUnmount(() => {
 
   .title-aligned-section > :not(.section-title) {
     margin-left: 0;
+    width: 100%;
+  }
+
+  .balanced-text-section > :not(.section-title) {
+    margin-left: 0;
+    margin-right: 0;
     width: 100%;
   }
 
