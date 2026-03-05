@@ -51,6 +51,7 @@ function createEmptyOriginalPreviewMedia() {
   return {
     type: 'image',
     src: '',
+    previewUrl: '',
     downloadUrl: '',
     title: '',
   }
@@ -110,14 +111,15 @@ const contactForm = ref({
 const BODY_LOCK_CLASS = 'modal-scroll-lock'
 const HEADER_OFFSET = 94
 const logoSrc = computed(() => resolveMediaSrc(siteContent.meta.logoUrl))
-const NON_HERO_VIDEO_KEYS = ['result_video_1', 'result_video_2', 'result_video_3', 'tutorial_video']
-const lazyVideoLoadedKeys = ref(new Set())
+const progressiveImageLoadedKeys = ref(new Set())
+const activatedPreviewVideoKeys = ref(new Set())
+const heroVideoGateVisible = ref(Boolean(siteContent.hero?.video?.src))
 const dnsCheckCache = new Map()
 const urlReachabilityCache = new Map()
-let lazyVideoObserver = null
 let originalPreviewFetchController = null
 let originalPreviewObjectUrl = ''
 let originalPreviewRequestSeq = 0
+let heroVideoGateTimer = null
 
 function setBodyScrollLock(locked) {
   if (typeof document === 'undefined') {
@@ -952,9 +954,93 @@ function resolvePosterSrc(src) {
   return resolved || undefined
 }
 
+function resolvePreviewSrc(src) {
+  const resolved = resolveMediaSrc(src)
+  return sanitizeDownloadUrlForAnonymousOss(resolved)
+}
+
 function resolveDownloadSrc(src) {
   const resolved = resolveMediaSrc(src)
   return sanitizeDownloadUrlForAnonymousOss(resolved)
+}
+
+function markProgressiveImageLoaded(imageKey) {
+  if (!imageKey || progressiveImageLoadedKeys.value.has(imageKey)) {
+    return
+  }
+  const next = new Set(progressiveImageLoadedKeys.value)
+  next.add(imageKey)
+  progressiveImageLoadedKeys.value = next
+}
+
+function isProgressiveImageLoaded(imageKey) {
+  if (!imageKey) {
+    return false
+  }
+  return progressiveImageLoadedKeys.value.has(imageKey)
+}
+
+function markPreviewVideoActivated(videoKey) {
+  if (!videoKey || activatedPreviewVideoKeys.value.has(videoKey)) {
+    return
+  }
+  const next = new Set(activatedPreviewVideoKeys.value)
+  next.add(videoKey)
+  activatedPreviewVideoKeys.value = next
+}
+
+function isPreviewVideoActivated(videoKey) {
+  if (!videoKey) {
+    return false
+  }
+  return activatedPreviewVideoKeys.value.has(videoKey)
+}
+
+function getManualVideoSrc(videoKey, rawSrc) {
+  if (!videoKey || !rawSrc) {
+    return ''
+  }
+  if (!isPreviewVideoActivated(videoKey)) {
+    return ''
+  }
+  return resolveMediaSrc(rawSrc)
+}
+
+function handlePreviewVideoClick(videoKey, event) {
+  if (!videoKey) {
+    return
+  }
+  if (!isPreviewVideoActivated(videoKey)) {
+    markPreviewVideoActivated(videoKey)
+    nextTick(() => {
+      const target = event?.currentTarget
+      if (target && typeof target.play === 'function') {
+        const maybePromise = target.play()
+        if (maybePromise && typeof maybePromise.catch === 'function') {
+          maybePromise.catch(() => {})
+        }
+      }
+    })
+  }
+}
+
+function markHeroVideoReady() {
+  if (!heroVideoGateVisible.value) {
+    return
+  }
+  heroVideoGateVisible.value = false
+  if (heroVideoGateTimer) {
+    clearTimeout(heroVideoGateTimer)
+    heroVideoGateTimer = null
+  }
+}
+
+function handleHeroVideoReady() {
+  markHeroVideoReady()
+}
+
+function handleHeroVideoError() {
+  markHeroVideoReady()
 }
 
 function isLikelySignedOssUrl(rawUrl) {
@@ -1171,9 +1257,10 @@ async function loadOriginalImageWithProgress(sourceUrl, requestId) {
   }
 }
 
-function openOriginalMediaPreview(type, rawUrl, title = '') {
-  const resolvedUrl = resolveDownloadSrc(rawUrl)
-  if (!resolvedUrl) {
+function openOriginalMediaPreview(type, previewRawUrl, downloadRawUrl, title = '') {
+  const previewUrl = resolvePreviewSrc(previewRawUrl)
+  const downloadUrl = resolveDownloadSrc(downloadRawUrl)
+  if (!previewUrl || !downloadUrl) {
     return
   }
   originalPreviewRequestSeq += 1
@@ -1184,14 +1271,15 @@ function openOriginalMediaPreview(type, rawUrl, title = '') {
 
   originalPreviewMedia.value = {
     type,
-    src: type === 'image' ? '' : resolvedUrl,
-    downloadUrl: resolvedUrl,
+    src: type === 'image' ? '' : previewUrl,
+    previewUrl,
+    downloadUrl,
     title,
   }
 
   if (type === 'image') {
     originalPreviewImageLoading.value = true
-    void loadOriginalImageWithProgress(resolvedUrl, requestId)
+    void loadOriginalImageWithProgress(previewUrl, requestId)
   }
 
   originalPreviewVisible.value = true
@@ -1310,81 +1398,16 @@ function handleGlobalKeydown(event) {
   }
 }
 
-function markLazyVideoLoaded(videoKey) {
-  if (!videoKey || lazyVideoLoadedKeys.value.has(videoKey)) {
-    return
-  }
-  const next = new Set(lazyVideoLoadedKeys.value)
-  next.add(videoKey)
-  lazyVideoLoadedKeys.value = next
-}
-
-function getLazyVideoSrc(videoKey, rawSrc) {
-  if (!rawSrc || !videoKey) {
-    return ''
-  }
-  if (!lazyVideoLoadedKeys.value.has(videoKey)) {
-    return ''
-  }
-  return resolveMediaSrc(rawSrc)
-}
-
-function setupLazyVideoLoading() {
-  if (typeof window === 'undefined' || typeof document === 'undefined') {
-    return
-  }
-
-  const targets = Array.from(document.querySelectorAll('video[data-lazy-key]'))
-  if (!targets.length) {
-    return
-  }
-
-  if (!('IntersectionObserver' in window)) {
-    NON_HERO_VIDEO_KEYS.forEach(markLazyVideoLoaded)
-    return
-  }
-
-  lazyVideoObserver?.disconnect()
-  lazyVideoObserver = new IntersectionObserver(
-    (entries) => {
-      entries.forEach((entry) => {
-        if (!entry.isIntersecting) {
-          return
-        }
-        const videoKey = entry.target.dataset.lazyKey
-        markLazyVideoLoaded(videoKey)
-        lazyVideoObserver?.unobserve(entry.target)
-      })
-    },
-    {
-      root: null,
-      rootMargin: '220px 0px',
-      threshold: 0.01,
-    },
-  )
-
-  targets.forEach((el) => {
-    const videoKey = el.dataset.lazyKey
-    if (!videoKey || lazyVideoLoadedKeys.value.has(videoKey)) {
-      return
-    }
-    lazyVideoObserver?.observe(el)
-  })
-}
-
-function teardownLazyVideoLoading() {
-  lazyVideoObserver?.disconnect()
-  lazyVideoObserver = null
-}
-
 onMounted(() => {
   document.title = siteContent.meta.pageTitle
 
   window.addEventListener('hashchange', handleHashChange)
   window.addEventListener('keydown', handleGlobalKeydown)
-  nextTick(() => {
-    setupLazyVideoLoading()
-  })
+  if (heroVideoGateVisible.value) {
+    heroVideoGateTimer = setTimeout(() => {
+      markHeroVideoReady()
+    }, 9000)
+  }
 })
 
 onBeforeUnmount(() => {
@@ -1392,7 +1415,10 @@ onBeforeUnmount(() => {
   abortOriginalPreviewFetch()
   clearOriginalPreviewObjectUrl()
   resetOriginalPreviewImageLoadState()
-  teardownLazyVideoLoading()
+  if (heroVideoGateTimer) {
+    clearTimeout(heroVideoGateTimer)
+    heroVideoGateTimer = null
+  }
   revokeCoverPreview()
   window.removeEventListener('hashchange', handleHashChange)
   window.removeEventListener('keydown', handleGlobalKeydown)
@@ -1410,72 +1436,98 @@ onBeforeUnmount(() => {
       </div>
     </header>
 
-    <main class="page-main">
-      <section class="shell hero-section">
-        <div class="hero-content">
-          <h2 class="focus-title">{{ siteContent.hero.title }}</h2>
+    <div v-if="heroVideoGateVisible" class="hero-gate-overlay">
+      <div class="hero-gate-card">
+        <p class="hero-gate-title">Loading opening video...</p>
+        <div class="hero-gate-spinner" aria-hidden="true" />
+      </div>
+    </div>
 
-          <div class="arrow-group" v-for="(bullet, index) in siteContent.hero.bullets" :key="`hero-bullet-${index}`">
-            <div class="arrow-icon">➢</div>
-            <div class="arrow-lines">
-              <p v-for="(line, lineIndex) in bullet" :key="`hero-bullet-line-${index}-${lineIndex}`" class="line-text">
-                {{ line }}
-              </p>
+    <main class="page-main" v-show="!heroVideoGateVisible">
+      <div class="first-screen">
+        <section class="shell hero-section">
+          <div class="hero-content">
+            <h2 class="focus-title">{{ siteContent.hero.title }}</h2>
+            <div class="hero-bullet-list">
+              <div class="arrow-group" v-for="(bullet, index) in siteContent.hero.bullets" :key="`hero-bullet-${index}`">
+                <div class="arrow-icon">➢</div>
+                <div class="arrow-lines">
+                  <p v-for="(line, lineIndex) in bullet" :key="`hero-bullet-line-${index}-${lineIndex}`" class="line-text">
+                    {{ line }}
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div class="hero-media-wrap">
-          <video
-            v-if="resolveMediaSrc(siteContent.hero.video.src)"
-            class="hero-video"
-            :src="resolveMediaSrc(siteContent.hero.video.src)"
-            :poster="resolvePosterSrc(siteContent.hero.video.poster)"
-            :autoplay="getVideoMode(siteContent.hero.video.slot).autoplay"
-            :controls="getVideoMode(siteContent.hero.video.slot).controls"
-            :loop="getVideoMode(siteContent.hero.video.slot).loop"
-            :muted="getVideoMode(siteContent.hero.video.slot).muted"
-            playsinline
-            preload="metadata"
-          />
+          <div class="hero-media-wrap">
+            <video
+              v-if="resolveMediaSrc(siteContent.hero.video.src)"
+              class="hero-video"
+              :src="resolveMediaSrc(siteContent.hero.video.src)"
+              :poster="resolvePosterSrc(siteContent.hero.video.poster)"
+              :autoplay="getVideoMode(siteContent.hero.video.slot).autoplay"
+              :controls="getVideoMode(siteContent.hero.video.slot).controls"
+              :loop="getVideoMode(siteContent.hero.video.slot).loop"
+              :muted="getVideoMode(siteContent.hero.video.slot).muted"
+              playsinline
+              preload="auto"
+              @loadeddata="handleHeroVideoReady"
+              @canplay="handleHeroVideoReady"
+              @canplaythrough="handleHeroVideoReady"
+              @error="handleHeroVideoError"
+            />
+            <button
+              v-if="resolvePreviewSrc(siteContent.hero.video.previewUrl) && resolveDownloadSrc(siteContent.hero.video.downloadUrl)"
+              type="button"
+              class="media-download-link media-download-overlay media-preview-trigger"
+              @click="openOriginalMediaPreview('video', siteContent.hero.video.previewUrl, siteContent.hero.video.downloadUrl, siteContent.meta.mediaDownloadLabels.video)"
+            >
+              {{ siteContent.meta.mediaDownloadLabels.video }}
+            </button>
+          </div>
+        </section>
+
+        <section class="shell nav-section">
           <button
-            v-if="resolveDownloadSrc(siteContent.hero.video.downloadUrl)"
+            v-for="item in siteContent.nav"
+            :key="item.key"
             type="button"
-            class="media-download-link media-download-overlay media-preview-trigger"
-            @click="openOriginalMediaPreview('video', siteContent.hero.video.downloadUrl, siteContent.meta.mediaDownloadLabels.video)"
+            :class="['pill-btn', { 'pill-btn-paper': item.key === 'paper' }]"
+            @click="handleNavClick(item)"
           >
-            {{ siteContent.meta.mediaDownloadLabels.video }}
+            {{ item.label }}
           </button>
-        </div>
-      </section>
+        </section>
+      </div>
 
-      <section class="shell nav-section">
-        <button
-          v-for="item in siteContent.nav"
-          :key="item.key"
-          type="button"
-          :class="['pill-btn', { 'pill-btn-paper': item.key === 'paper' }]"
-          @click="handleNavClick(item)"
-        >
-          {{ item.label }}
-        </button>
-      </section>
-
+      <div class="content-mid-backdrop">
       <section class="shell block-section">
         <h2 class="section-title"><span class="title-mark">◼</span>{{ siteContent.sections.performance.title }}</h2>
         <article class="panel-card">
           <h3 class="panel-title">{{ siteContent.sections.performance.panelTitle }}</h3>
-          <img
-            v-if="resolveMediaSrc(siteContent.sections.performance.image.src)"
-            :src="resolveMediaSrc(siteContent.sections.performance.image.src)"
-            :alt="siteContent.sections.performance.image.alt"
-            class="media-image performance-image"
-          />
-          <p v-if="resolveDownloadSrc(siteContent.sections.performance.image.downloadUrl)" class="media-action-row performance-action-row">
+          <div
+            v-if="resolveMediaSrc(siteContent.sections.performance.image.placeholderSrc)"
+            :class="['progressive-image-wrap', 'performance-image']"
+          >
+            <img
+              :src="resolveMediaSrc(siteContent.sections.performance.image.placeholderSrc)"
+              :alt="`${siteContent.sections.performance.image.alt} placeholder`"
+              class="media-image progressive-image-placeholder"
+            />
+            <img
+              v-if="resolveMediaSrc(siteContent.sections.performance.image.src)"
+              :src="resolveMediaSrc(siteContent.sections.performance.image.src)"
+              :alt="siteContent.sections.performance.image.alt"
+              :class="['media-image', 'progressive-image-final', { 'is-loaded': isProgressiveImageLoaded('performance_demo') }]"
+              @load="markProgressiveImageLoaded('performance_demo')"
+            />
+          </div>
+          <p v-if="resolvePreviewSrc(siteContent.sections.performance.image.previewUrl)" class="media-action-row media-action-row-image performance-action-row">
             <button
               type="button"
               class="media-download-link media-preview-trigger"
-              @click="openOriginalMediaPreview('image', siteContent.sections.performance.image.downloadUrl, siteContent.meta.mediaDownloadLabels.image)"
+              @click="openOriginalMediaPreview('image', siteContent.sections.performance.image.previewUrl, siteContent.sections.performance.image.downloadUrl, siteContent.meta.mediaDownloadLabels.image)"
             >
               {{ siteContent.meta.mediaDownloadLabels.image }}
             </button>
@@ -1492,22 +1544,29 @@ onBeforeUnmount(() => {
             :class="['video-card', `video-card-${video.key}`]"
           >
             <video
-              :class="['section-video', { 'result-video-1-zoom': video.key === 'result_video_1' }]"
-              :data-lazy-key="video.key"
-              :src="getLazyVideoSrc(video.key, video.src)"
+              :class="[
+                'section-video',
+                {
+                  'result-video-1-zoom': video.key === 'result_video_1',
+                  'is-click-to-load': !isPreviewVideoActivated(video.key),
+                },
+              ]"
+              :src="getManualVideoSrc(video.key, video.src)"
               :poster="resolvePosterSrc(video.poster)"
-              :autoplay="getVideoMode(video.slot).autoplay"
-              :controls="getVideoMode(video.slot).controls"
-              :loop="getVideoMode(video.slot).loop"
-              :muted="getVideoMode(video.slot).muted"
+              :autoplay="false"
+              :controls="isPreviewVideoActivated(video.key) ? getVideoMode(video.slot).controls : false"
+              :loop="false"
+              :muted="false"
+              :title="!isPreviewVideoActivated(video.key) ? 'Click to load preview video' : ''"
               playsinline
-              preload="metadata"
+              preload="none"
+              @click="handlePreviewVideoClick(video.key, $event)"
             />
             <button
-              v-if="resolveDownloadSrc(video.downloadUrl)"
+              v-if="resolvePreviewSrc(video.previewUrl) && resolveDownloadSrc(video.downloadUrl)"
               type="button"
               class="media-download-link media-download-overlay media-preview-trigger"
-              @click="openOriginalMediaPreview('video', video.downloadUrl, siteContent.meta.mediaDownloadLabels.video)"
+              @click="openOriginalMediaPreview('video', video.previewUrl, video.downloadUrl, siteContent.meta.mediaDownloadLabels.video)"
             >
               {{ siteContent.meta.mediaDownloadLabels.video }}
             </button>
@@ -1516,22 +1575,23 @@ onBeforeUnmount(() => {
 
         <article class="video-card video-card-wide video-card-result_video_3">
           <video
-            class="section-video"
-            data-lazy-key="result_video_3"
-            :src="getLazyVideoSrc('result_video_3', siteContent.sections.resultVideo.videos[2].src)"
+            :class="['section-video', { 'is-click-to-load': !isPreviewVideoActivated('result_video_3') }]"
+            :src="getManualVideoSrc('result_video_3', siteContent.sections.resultVideo.videos[2].src)"
             :poster="resolvePosterSrc(siteContent.sections.resultVideo.videos[2].poster)"
-            :autoplay="getVideoMode(siteContent.sections.resultVideo.videos[2].slot).autoplay"
-            :controls="getVideoMode(siteContent.sections.resultVideo.videos[2].slot).controls"
-            :loop="getVideoMode(siteContent.sections.resultVideo.videos[2].slot).loop"
-            :muted="getVideoMode(siteContent.sections.resultVideo.videos[2].slot).muted"
+            :autoplay="false"
+            :controls="isPreviewVideoActivated('result_video_3') ? getVideoMode(siteContent.sections.resultVideo.videos[2].slot).controls : false"
+            :loop="false"
+            :muted="false"
+            :title="!isPreviewVideoActivated('result_video_3') ? 'Click to load preview video' : ''"
             playsinline
             preload="none"
+            @click="handlePreviewVideoClick('result_video_3', $event)"
           />
           <button
-            v-if="resolveDownloadSrc(siteContent.sections.resultVideo.videos[2].downloadUrl)"
+            v-if="resolvePreviewSrc(siteContent.sections.resultVideo.videos[2].previewUrl) && resolveDownloadSrc(siteContent.sections.resultVideo.videos[2].downloadUrl)"
             type="button"
             class="media-download-link media-download-overlay media-preview-trigger"
-            @click="openOriginalMediaPreview('video', siteContent.sections.resultVideo.videos[2].downloadUrl, siteContent.meta.mediaDownloadLabels.video)"
+            @click="openOriginalMediaPreview('video', siteContent.sections.resultVideo.videos[2].previewUrl, siteContent.sections.resultVideo.videos[2].downloadUrl, siteContent.meta.mediaDownloadLabels.video)"
           >
             {{ siteContent.meta.mediaDownloadLabels.video }}
           </button>
@@ -1547,21 +1607,20 @@ onBeforeUnmount(() => {
 
           <article class="dataset-card">
             <h3 class="dataset-card-title">{{ siteContent.sections.dataset.cardTitle }}</h3>
-            <img
-              v-if="resolveMediaSrc(siteContent.sections.dataset.image.src)"
-              :src="resolveMediaSrc(siteContent.sections.dataset.image.src)"
-              :alt="siteContent.sections.dataset.image.alt"
-              class="media-image dataset-image"
-            />
-            <p v-if="resolveDownloadSrc(siteContent.sections.dataset.image.downloadUrl)" class="media-action-row">
-              <button
-                type="button"
-                class="media-download-link media-preview-trigger"
-                @click="openOriginalMediaPreview('image', siteContent.sections.dataset.image.downloadUrl, siteContent.meta.mediaDownloadLabels.image)"
-              >
-                {{ siteContent.meta.mediaDownloadLabels.image }}
-              </button>
-            </p>
+            <div v-if="resolveMediaSrc(siteContent.sections.dataset.image.placeholderSrc)" class="progressive-image-wrap dataset-image">
+              <img
+                :src="resolveMediaSrc(siteContent.sections.dataset.image.placeholderSrc)"
+                :alt="`${siteContent.sections.dataset.image.alt} placeholder`"
+                class="media-image progressive-image-placeholder"
+              />
+              <img
+                v-if="resolveMediaSrc(siteContent.sections.dataset.image.src)"
+                :src="resolveMediaSrc(siteContent.sections.dataset.image.src)"
+                :alt="siteContent.sections.dataset.image.alt"
+                :class="['media-image', 'progressive-image-final', { 'is-loaded': isProgressiveImageLoaded('dataset_main') }]"
+                @load="markProgressiveImageLoaded('dataset_main')"
+              />
+            </div>
             <div class="dataset-label-row">
               <span v-for="(label, index) in siteContent.sections.dataset.footerLabels" :key="`dataset-footer-${index}`">{{ label }}</span>
             </div>
@@ -1592,17 +1651,28 @@ onBeforeUnmount(() => {
           class="panel-card compact"
         >
           <h3 class="panel-subtitle">{{ block.title }}</h3>
-          <img
-            v-if="resolveMediaSrc(block.image.src)"
-            :src="resolveMediaSrc(block.image.src)"
-            :alt="block.image.alt"
-            :class="['media-image', { 'ext-large-image': ['ext_3', 'ext_4', 'ext_5', 'ext_6'].includes(block.key) }]"
-          />
-          <p v-if="resolveDownloadSrc(block.image.downloadUrl)" class="media-action-row">
+          <div
+            v-if="resolveMediaSrc(block.image.placeholderSrc)"
+            :class="['progressive-image-wrap', { 'ext-large-image': ['ext_3', 'ext_4', 'ext_5', 'ext_6'].includes(block.key) }]"
+          >
+            <img
+              :src="resolveMediaSrc(block.image.placeholderSrc)"
+              :alt="`${block.image.alt} placeholder`"
+              class="media-image progressive-image-placeholder"
+            />
+            <img
+              v-if="resolveMediaSrc(block.image.src)"
+              :src="resolveMediaSrc(block.image.src)"
+              :alt="block.image.alt"
+              :class="['media-image', 'progressive-image-final', { 'is-loaded': isProgressiveImageLoaded(`ext_${block.key}`) }]"
+              @load="markProgressiveImageLoaded(`ext_${block.key}`)"
+            />
+          </div>
+          <p v-if="resolvePreviewSrc(block.image.previewUrl)" class="media-action-row media-action-row-image">
             <button
               type="button"
               class="media-download-link media-preview-trigger"
-              @click="openOriginalMediaPreview('image', block.image.downloadUrl, siteContent.meta.mediaDownloadLabels.image)"
+              @click="openOriginalMediaPreview('image', block.image.previewUrl, block.image.downloadUrl, siteContent.meta.mediaDownloadLabels.image)"
             >
               {{ siteContent.meta.mediaDownloadLabels.image }}
             </button>
@@ -1616,17 +1686,25 @@ onBeforeUnmount(() => {
       <section class="shell block-section">
         <article class="panel-card compact">
           <h3 class="panel-subtitle">{{ siteContent.sections.handDrawn.title }}</h3>
-          <img
-            v-if="resolveMediaSrc(siteContent.sections.handDrawn.image.src)"
-            :src="resolveMediaSrc(siteContent.sections.handDrawn.image.src)"
-            :alt="siteContent.sections.handDrawn.image.alt"
-            class="media-image"
-          />
-          <p v-if="resolveDownloadSrc(siteContent.sections.handDrawn.image.downloadUrl)" class="media-action-row">
+          <div v-if="resolveMediaSrc(siteContent.sections.handDrawn.image.placeholderSrc)" class="progressive-image-wrap">
+            <img
+              :src="resolveMediaSrc(siteContent.sections.handDrawn.image.placeholderSrc)"
+              :alt="`${siteContent.sections.handDrawn.image.alt} placeholder`"
+              class="media-image progressive-image-placeholder"
+            />
+            <img
+              v-if="resolveMediaSrc(siteContent.sections.handDrawn.image.src)"
+              :src="resolveMediaSrc(siteContent.sections.handDrawn.image.src)"
+              :alt="siteContent.sections.handDrawn.image.alt"
+              :class="['media-image', 'progressive-image-final', { 'is-loaded': isProgressiveImageLoaded('hand_drawn') }]"
+              @load="markProgressiveImageLoaded('hand_drawn')"
+            />
+          </div>
+          <p v-if="resolvePreviewSrc(siteContent.sections.handDrawn.image.previewUrl)" class="media-action-row media-action-row-image">
             <button
               type="button"
               class="media-download-link media-preview-trigger"
-              @click="openOriginalMediaPreview('image', siteContent.sections.handDrawn.image.downloadUrl, siteContent.meta.mediaDownloadLabels.image)"
+              @click="openOriginalMediaPreview('image', siteContent.sections.handDrawn.image.previewUrl, siteContent.sections.handDrawn.image.downloadUrl, siteContent.meta.mediaDownloadLabels.image)"
             >
               {{ siteContent.meta.mediaDownloadLabels.image }}
             </button>
@@ -1638,26 +1716,30 @@ onBeforeUnmount(() => {
         <h2 class="section-title"><span class="title-mark">◼</span>{{ siteContent.sections.tutorial.title }}</h2>
         <div class="tutorial-layout">
           <div class="tutorial-list text-rect">
-            <p v-for="(item, index) in siteContent.sections.tutorial.bullets" :key="`tutorial-${index}`">➢ {{ item }}</p>
+            <div v-for="(item, index) in siteContent.sections.tutorial.bullets" :key="`tutorial-${index}`" class="tutorial-item">
+              <span class="tutorial-marker">➢</span>
+              <p>{{ item }}</p>
+            </div>
           </div>
           <div class="tutorial-media">
             <video
-              class="section-video tutorial-video"
-              data-lazy-key="tutorial_video"
-              :src="getLazyVideoSrc('tutorial_video', siteContent.sections.tutorial.video.src)"
+              :class="['section-video', 'tutorial-video', { 'is-click-to-load': !isPreviewVideoActivated('tutorial_video') }]"
+              :src="getManualVideoSrc('tutorial_video', siteContent.sections.tutorial.video.src)"
               :poster="resolvePosterSrc(siteContent.sections.tutorial.video.poster)"
-              :autoplay="getVideoMode(siteContent.sections.tutorial.video.slot).autoplay"
-              :controls="getVideoMode(siteContent.sections.tutorial.video.slot).controls"
-              :loop="getVideoMode(siteContent.sections.tutorial.video.slot).loop"
-              :muted="getVideoMode(siteContent.sections.tutorial.video.slot).muted"
+              :autoplay="false"
+              :controls="isPreviewVideoActivated('tutorial_video') ? getVideoMode(siteContent.sections.tutorial.video.slot).controls : false"
+              :loop="false"
+              :muted="false"
+              :title="!isPreviewVideoActivated('tutorial_video') ? 'Click to load preview video' : ''"
               playsinline
               preload="none"
+              @click="handlePreviewVideoClick('tutorial_video', $event)"
             />
             <button
-              v-if="resolveDownloadSrc(siteContent.sections.tutorial.video.downloadUrl)"
+              v-if="resolvePreviewSrc(siteContent.sections.tutorial.video.previewUrl) && resolveDownloadSrc(siteContent.sections.tutorial.video.downloadUrl)"
               type="button"
               class="media-download-link media-download-overlay media-preview-trigger"
-              @click="openOriginalMediaPreview('video', siteContent.sections.tutorial.video.downloadUrl, siteContent.meta.mediaDownloadLabels.video)"
+              @click="openOriginalMediaPreview('video', siteContent.sections.tutorial.video.previewUrl, siteContent.sections.tutorial.video.downloadUrl, siteContent.meta.mediaDownloadLabels.video)"
             >
               {{ siteContent.meta.mediaDownloadLabels.video }}
             </button>
@@ -1672,7 +1754,7 @@ onBeforeUnmount(() => {
         </div>
         <button
           type="button"
-          class="pill-btn pill-btn-paper long-btn section-cta"
+          class="pill-btn long-btn section-cta"
           @click="openDatasetSubmissionModal"
         >
           {{ siteContent.sections.dataRelease.button.label }}
@@ -1715,6 +1797,7 @@ onBeforeUnmount(() => {
           </a>
         </div>
       </section>
+      </div>
     </main>
 
     <Transition name="dataset-form-modal">
@@ -1829,7 +1912,7 @@ onBeforeUnmount(() => {
                         @input="resetCloudLinkCheck(0)"
                         @blur="handleCloudLinkBlur(0)"
                       />
-                      <button type="button" class="pill-btn pill-btn-paper dataset-check-btn" @click="handleCloudLinkCheck(0)">
+                      <button type="button" class="pill-btn dataset-check-btn" @click="handleCloudLinkCheck(0)">
                         Check
                       </button>
                       <span :class="['field-check-icon', `is-${linkChecks[0].status}`]">{{ getCheckIcon(linkChecks[0].status) }}</span>
@@ -1850,7 +1933,7 @@ onBeforeUnmount(() => {
                         @input="resetCloudLinkCheck(1)"
                         @blur="handleCloudLinkBlur(1)"
                       />
-                      <button type="button" class="pill-btn pill-btn-paper dataset-check-btn" @click="handleCloudLinkCheck(1)">
+                      <button type="button" class="pill-btn dataset-check-btn" @click="handleCloudLinkCheck(1)">
                         Check
                       </button>
                       <span :class="['field-check-icon', `is-${linkChecks[1].status}`]">{{ getCheckIcon(linkChecks[1].status) }}</span>
@@ -1881,7 +1964,7 @@ onBeforeUnmount(() => {
                         @input="resetEmailCheck"
                         @blur="validateUserEmail(true)"
                       />
-                      <button type="button" class="pill-btn pill-btn-paper dataset-check-btn" @click="validateUserEmail(true)">
+                      <button type="button" class="pill-btn dataset-check-btn" @click="validateUserEmail(true)">
                         Check
                       </button>
                       <span :class="['field-check-icon', `is-${emailCheck.status}`]">{{ getCheckIcon(emailCheck.status) }}</span>
@@ -1966,7 +2049,7 @@ onBeforeUnmount(() => {
                       <button
                         v-else
                         type="button"
-                        class="pill-btn pill-btn-paper dataset-upload-btn"
+                        class="pill-btn dataset-upload-btn"
                         @click="triggerCoverUpload"
                       >
                         {{ siteContent.sections.dataRelease.portal.reuploadButtonText }}
@@ -1997,7 +2080,7 @@ onBeforeUnmount(() => {
               <button type="button" class="pill-btn dataset-reset-btn" @click="resetDatasetForm">
                 {{ siteContent.sections.dataRelease.portal.resetText }}
               </button>
-              <button type="submit" class="pill-btn pill-btn-paper dataset-submit-btn" :disabled="datasetSubmitting">
+              <button type="submit" class="pill-btn dataset-submit-btn" :disabled="datasetSubmitting">
                 {{ datasetSubmitting ? 'Submitting...' : siteContent.sections.dataRelease.portal.submitText }}
               </button>
             </div>
@@ -2018,7 +2101,7 @@ onBeforeUnmount(() => {
             </li>
           </ul>
           <div class="dataset-validation-actions">
-            <button type="button" class="pill-btn pill-btn-paper dataset-validation-btn" @click="closeDatasetValidationAlert">
+            <button type="button" class="pill-btn dataset-validation-btn" @click="closeDatasetValidationAlert">
               OK
             </button>
           </div>
@@ -2043,7 +2126,7 @@ onBeforeUnmount(() => {
                 @input="resetContactEmailCheck"
                 @blur="validateContactEmail(true)"
               />
-              <button type="button" class="pill-btn pill-btn-paper contact-check-btn" @click="validateContactEmail(true)">
+              <button type="button" class="pill-btn contact-check-btn" @click="validateContactEmail(true)">
                 Check
               </button>
               <span :class="['field-check-icon', `is-${contactEmailCheck.status}`]">{{ getCheckIcon(contactEmailCheck.status) }}</span>
@@ -2079,7 +2162,7 @@ onBeforeUnmount(() => {
             <p v-if="contactFieldChecks.content.message" :class="['field-check-message', `is-${contactFieldChecks.content.status}`]">
               {{ contactFieldChecks.content.message }}
             </p>
-            <button type="submit" class="pill-btn pill-btn-paper contact-submit-btn" :disabled="contactSubmitting">
+            <button type="submit" class="pill-btn contact-submit-btn" :disabled="contactSubmitting">
               {{ contactSubmitting ? 'Submitting...' : siteContent.sections.declaration.contactForm.submitText }}
             </button>
           </form>
@@ -2130,7 +2213,7 @@ onBeforeUnmount(() => {
           <div class="original-media-actions">
             <button
               type="button"
-              class="pill-btn pill-btn-paper original-media-btn"
+              class="pill-btn original-media-btn"
               :disabled="originalPreviewDownloading"
               @click="downloadOriginalMedia"
             >
@@ -2138,7 +2221,7 @@ onBeforeUnmount(() => {
             </button>
             <a
               class="pill-btn original-media-btn"
-              :href="resolveDownloadSrc(originalPreviewMedia.downloadUrl)"
+              :href="resolvePreviewSrc(originalPreviewMedia.previewUrl)"
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -2169,7 +2252,7 @@ onBeforeUnmount(() => {
 :global(html) {
   zoom: 1.25;
   scrollbar-gutter: stable;
-  background: #edf2f8;
+  background: #ffffff;
   overflow-x: hidden;
 }
 
@@ -2179,10 +2262,7 @@ onBeforeUnmount(() => {
 
 :global(body) {
   margin: 0;
-  background:
-    radial-gradient(circle at 12% -8%, rgba(136, 170, 223, 0.22), transparent 40%),
-    radial-gradient(circle at 88% 0%, rgba(100, 140, 208, 0.16), transparent 36%),
-    #edf2f8;
+  background: #ffffff;
   color: #1d2738;
   font-family: 'Montserrat', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
   overflow-x: hidden;
@@ -2195,14 +2275,14 @@ onBeforeUnmount(() => {
 
 .app-root {
   --surface: #ffffff;
-  --surface-soft: #f5f8fc;
-  --text-main: #1d2738;
-  --text-muted: #4f607b;
-  --line: #d8e1ee;
-  --brand: #5f82bc;
-  --brand-strong: #496fa9;
-  --brand-soft: rgba(95, 130, 188, 0.14);
-  --shadow-soft: 0 12px 30px rgba(28, 47, 79, 0.1);
+  --surface-soft: #f5f7fa;
+  --text-main: #162236;
+  --text-muted: #42506a;
+  --line: #ced8e6;
+  --brand: #245ea8;
+  --brand-strong: #1e4f90;
+  --brand-soft: rgba(36, 94, 168, 0.14);
+  --shadow-soft: 0 12px 30px rgba(18, 42, 77, 0.1);
   --performance-media-width: 92%;
   --result-video-top-width: 92%;
   --result-video-bottom-width: 92%;
@@ -2210,10 +2290,54 @@ onBeforeUnmount(() => {
   --result-video-top-item-width: 45%;
   --result-video-top-item-aspect-ratio: 16 / 5;
   --result-video-bottom-aspect-ratio: 1714 / 858;
-  --result-video-1-scale: 1.04;
-  --hero-video-aspect-ratio: 700 / 460;
+  --result-video-1-scale: 1.1;
   min-height: 100vh;
   color: var(--text-main);
+}
+
+.hero-gate-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  background: #ffffff;
+  display: grid;
+  place-items: center;
+}
+
+.hero-gate-card {
+  min-width: min(440px, 92vw);
+  border: 1px solid #d6e1ef;
+  border-radius: 14px;
+  padding: 24px 26px;
+  background: #f9fbff;
+  box-shadow: 0 18px 34px rgba(20, 44, 79, 0.12);
+  text-align: center;
+}
+
+.hero-gate-title {
+  margin: 0;
+  color: #1f406f;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.hero-gate-spinner {
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  border: 3px solid #c6d7ed;
+  border-top-color: #285ea2;
+  margin: 14px auto 0;
+  animation: hero-spin 0.85s linear infinite;
+}
+
+@keyframes hero-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .shell {
@@ -2274,36 +2398,81 @@ onBeforeUnmount(() => {
 }
 
 .page-main {
-  padding: 16px 0 50px;
+  padding: 14px 0 52px;
+}
+
+.first-screen {
+  min-height: calc(100vh - 84px);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+}
+
+.content-mid-backdrop {
+  position: relative;
+  margin-top: 18px;
+  padding: 18px 0 36px;
+}
+
+.content-mid-backdrop::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(1150px, calc(100% - 18px));
+  background: #f3f5f7;
+  border-radius: 16px;
+  z-index: 0;
+}
+
+.content-mid-backdrop > .shell {
+  position: relative;
+  z-index: 1;
 }
 
 .hero-section {
   display: grid;
-  grid-template-columns: 1fr minmax(300px, 39%);
-  gap: 30px;
-  align-items: start;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 39%);
+  gap: 28px;
+  align-items: stretch;
   padding: 0;
 }
 
+.hero-content {
+  display: flex;
+  flex-direction: column;
+}
+
 .focus-title {
-  margin: 4px 0 20px;
+  margin: 2px 0 16px;
   font-size: clamp(31px, 3.7vw, 46px);
   font-weight: 800;
   color: #162740;
   line-height: 1.1;
 }
 
+.hero-bullet-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  justify-content: space-between;
+}
+
 .arrow-group {
   display: flex;
-  gap: 10px;
-  margin-bottom: 12px;
+  gap: 12px;
+  margin-bottom: 10px;
 }
 
 .arrow-icon {
   color: var(--brand-strong);
-  font-size: 14px;
-  line-height: 1.5;
-  margin-top: 2px;
+  font-size: 20px;
+  line-height: 1.15;
+  margin-top: 1px;
+  font-weight: 900;
 }
 
 .arrow-lines {
@@ -2314,20 +2483,20 @@ onBeforeUnmount(() => {
 
 .line-text {
   margin: 0;
-  font-size: clamp(16px, 1.35vw, 19px);
-  line-height: 1.4;
+  font-size: clamp(16px, 1.26vw, 19px);
+  line-height: 1.42;
   color: #27364e;
-  text-align: justify;
-  text-justify: inter-word;
+  text-align: left;
   hyphens: auto;
   overflow-wrap: break-word;
 }
 
 .hero-media-wrap {
   position: relative;
-  margin-top: 8px;
+  margin-top: 0;
   width: 100%;
-  aspect-ratio: var(--hero-video-aspect-ratio);
+  min-height: 340px;
+  height: 100%;
 }
 
 .hero-video,
@@ -2342,11 +2511,19 @@ onBeforeUnmount(() => {
   background: transparent;
   object-fit: cover;
   object-position: center;
+  height: 100%;
 }
 
 .section-video {
-  background: transparent;
+  background: #f4f7fb;
   object-fit: cover;
+  cursor: pointer;
+}
+
+.section-video.is-click-to-load {
+  border-style: dashed;
+  border-color: #9cb4d4;
+  background: linear-gradient(180deg, #eef4fc, #e4edf8);
 }
 
 .media-image {
@@ -2355,10 +2532,10 @@ onBeforeUnmount(() => {
   border: 0;
   border-radius: 0;
   background: transparent !important;
-  mix-blend-mode: multiply;
+  mix-blend-mode: normal;
   object-fit: contain;
   height: auto;
-  max-height: 460px;
+  max-height: 560px;
   min-height: 0;
 }
 
@@ -2368,35 +2545,32 @@ onBeforeUnmount(() => {
   max-height: none;
 }
 
-.hero-video {
-  height: 100%;
-  min-height: 0;
-}
-
 .nav-section {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
-  margin: 20px auto 8px;
+  margin: 22px auto 0;
   padding: 0;
 }
 
 .pill-btn {
-  border: 1px solid rgba(73, 111, 169, 0.22);
+  border: 1px solid rgba(28, 77, 140, 0.24);
   border-radius: 999px;
   min-height: 44px;
-  background: linear-gradient(145deg, #9bb5dd, #6f93cc);
-  color: #0f243e;
+  background: linear-gradient(140deg, #2e6cbc, #1f5496);
+  color: #ffffff;
   font-weight: 800;
   letter-spacing: 0.02em;
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease, background 0.2s ease;
-  box-shadow: 0 6px 14px rgba(49, 76, 117, 0.16);
+  box-shadow: 0 8px 16px rgba(27, 64, 113, 0.22);
 }
 
 .pill-btn:hover {
   transform: translateY(-2px);
-  box-shadow: 0 10px 20px rgba(49, 76, 117, 0.24);
+  box-shadow: 0 12px 22px rgba(24, 57, 103, 0.28);
   filter: brightness(1.04);
 }
 
@@ -2413,11 +2587,19 @@ onBeforeUnmount(() => {
 }
 
 .pill-btn-paper {
-  background: linear-gradient(145deg, #c9d9ef, #b1c8e7);
+  background: linear-gradient(145deg, #dce6f4, #c6d6ec);
+  color: #17365f;
+}
+
+.nav-section .pill-btn {
+  width: clamp(98px, 10.8vw, 126px);
+  min-width: clamp(98px, 10.8vw, 126px);
+  max-width: clamp(98px, 10.8vw, 126px);
 }
 
 .long-btn {
-  width: 100%;
+  min-width: 260px;
+  width: auto;
 }
 
 .block-section {
@@ -2536,8 +2718,8 @@ onBeforeUnmount(() => {
 
 .dataset-layout {
   display: grid;
-  grid-template-columns: 1fr minmax(280px, 40%);
-  gap: 18px;
+  grid-template-columns: minmax(0, 56%) minmax(320px, 44%);
+  gap: 20px;
   align-items: stretch;
 }
 
@@ -2553,19 +2735,19 @@ onBeforeUnmount(() => {
 }
 
 .dataset-text {
-  max-width: 75%;
+  max-width: 100%;
+  justify-content: flex-start;
 }
 
 .dataset-text p,
 .intro-lines p,
-.tutorial-list p,
+.tutorial-item p,
 .declaration-text {
   margin: 0;
   font-size: clamp(14px, 0.96vw, 17px);
-  line-height: 1.45;
+  line-height: 1.5;
   color: #2a3a52;
-  text-align: justify;
-  text-justify: inter-word;
+  text-align: left;
   hyphens: auto;
   overflow-wrap: break-word;
 }
@@ -2575,6 +2757,8 @@ onBeforeUnmount(() => {
   --dataset-main-left-col: 44%;
   --dataset-main-right-col: 56%;
   --dataset-meta-shift-x: -20px;
+  display: flex;
+  flex-direction: column;
   background: transparent;
   border: 0;
   border-radius: 0;
@@ -2590,8 +2774,8 @@ onBeforeUnmount(() => {
   min-height: 0;
 }
 
-.dataset-image {
-  max-height: 190px;
+.dataset-image .media-image {
+  max-height: 220px;
 }
 
 .dataset-label-row {
@@ -2633,17 +2817,31 @@ onBeforeUnmount(() => {
 .tutorial-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   padding: 0;
   background: transparent;
   border: 0;
   border-radius: 0;
 }
 
+.tutorial-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.tutorial-marker {
+  color: var(--brand-strong);
+  font-size: 18px;
+  line-height: 1.2;
+  font-weight: 900;
+  transform: translateY(1px);
+}
+
 .tutorial-media {
   position: relative;
   aspect-ratio: 1750 / 932;
-  width: 75%;
+  width: 88%;
   margin-left: auto;
 }
 
@@ -2662,19 +2860,23 @@ onBeforeUnmount(() => {
 }
 
 .media-action-row {
-  margin: 8px 0 0;
+  margin: 6px 0 0;
   display: flex;
   justify-content: flex-end;
 }
 
+.media-action-row-image {
+  margin-top: 2px;
+}
+
 .performance-action-row {
-  margin-top: 4px;
+  margin-top: 2px;
 }
 
 .media-download-link {
-  color: #1f67cf;
+  color: #1a4f95;
   text-decoration: none;
-  font-weight: 700;
+  font-weight: 800;
   font-size: 13px;
   line-height: 1.2;
 }
@@ -2703,9 +2905,36 @@ onBeforeUnmount(() => {
   box-shadow: 0 4px 12px rgba(28, 47, 79, 0.14);
 }
 
+.progressive-image-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.progressive-image-placeholder {
+  position: relative;
+  z-index: 1;
+}
+
+.progressive-image-final {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  opacity: 0;
+  transition: opacity 0.24s ease;
+}
+
+.progressive-image-final.is-loaded {
+  opacity: 1;
+}
+
 .ext-large-image {
   max-height: none;
   width: 100%;
+  min-height: 260px;
+}
+
+.ext-large-image .media-image {
+  max-height: 620px;
 }
 
 .original-media-overlay {
@@ -3447,6 +3676,7 @@ onBeforeUnmount(() => {
     --result-video-top-width: 100%;
     --result-video-bottom-width: 100%;
     --result-video-top-item-width: 100%;
+    --result-video-1-scale: 1.02;
   }
 
   .header-inner {
@@ -3473,12 +3703,24 @@ onBeforeUnmount(() => {
     padding: 0;
   }
 
+  .first-screen {
+    min-height: auto;
+  }
+
   .hero-media-wrap {
     margin-top: 0;
+    min-height: 250px;
   }
 
   .nav-section {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    justify-content: center;
+    margin-top: 16px;
+  }
+
+  .nav-section .pill-btn {
+    width: clamp(120px, 42vw, 180px);
+    min-width: clamp(120px, 42vw, 180px);
+    max-width: clamp(120px, 42vw, 180px);
   }
 
   .section-title {
@@ -3488,7 +3730,7 @@ onBeforeUnmount(() => {
   .line-text,
   .dataset-text p,
   .intro-lines p,
-  .tutorial-list p,
+  .tutorial-item p,
   .declaration-text {
     font-size: clamp(15px, 2.4vw, 18px);
   }
@@ -3507,6 +3749,10 @@ onBeforeUnmount(() => {
   .performance-image {
     width: 100%;
     max-width: 100%;
+  }
+
+  .content-mid-backdrop::before {
+    width: min(1150px, calc(100% - 10px));
   }
 
   .original-media-overlay {
@@ -3597,6 +3843,12 @@ onBeforeUnmount(() => {
   .nav-section {
     gap: 10px;
     padding: 0;
+  }
+
+  .nav-section .pill-btn {
+    width: calc(50% - 6px);
+    min-width: calc(50% - 6px);
+    max-width: calc(50% - 6px);
   }
 
   .pill-btn {

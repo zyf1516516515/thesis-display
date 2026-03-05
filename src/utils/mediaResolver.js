@@ -1,9 +1,15 @@
 ﻿const ALLOWED_ANCHORS = new Set(['dataset', 'competition', 'declaration'])
 
-const MEDIA_MODULES = import.meta.glob('../resources/**/*.{mp4,MP4,webm,WEBM,ogg,OGG,mov,MOV,m4v,M4V,svg,SVG,png,PNG,jpg,JPG,jpeg,JPEG,webp,WEBP,avif,AVIF,gif,GIF}', {
-  eager: true,
-  import: 'default',
-})
+const MEDIA_MODULES = {
+  ...import.meta.glob('../resources/**/*.{mp4,MP4,webm,WEBM,ogg,OGG,mov,MOV,m4v,M4V,svg,SVG,png,PNG,jpg,JPG,jpeg,JPEG,webp,WEBP,avif,AVIF,gif,GIF}', {
+    eager: true,
+    import: 'default',
+  }),
+  ...import.meta.glob('../svg_resource/**/*.{svg,SVG}', {
+    eager: true,
+    import: 'default',
+  }),
+}
 
 const BASE_URL = normalizeBaseUrl(import.meta.env.BASE_URL || '/')
 const MEDIA_SOURCE_MAP = buildMediaSourceMap(MEDIA_MODULES)
@@ -45,7 +51,12 @@ export function resolveMediaSrc(src, sourceMap = MEDIA_SOURCE_MAP, baseUrl = BAS
     return fromMapWithoutSlash
   }
 
-  if (normalizedSrc.startsWith('src/resources/') || normalizedSrc.startsWith('/src/resources/')) {
+  if (
+    normalizedSrc.startsWith('src/resources/') ||
+    normalizedSrc.startsWith('/src/resources/') ||
+    normalizedSrc.startsWith('src/svg_resource/') ||
+    normalizedSrc.startsWith('/src/svg_resource/')
+  ) {
     return ''
   }
 

@@ -1,11 +1,14 @@
 const DEFAULT_PREVIEW_BASE_URL = 'https://thesis-display-oss-bucket.sylg.chat'
 const DEFAULT_DOWNLOAD_BASE_URL = 'https://thesis-display-bucket.oss-ap-southeast-1.aliyuncs.com'
+
 const PREVIEW_BASE_URL = normalizeBaseUrl(import.meta.env.VITE_OSS_PREVIEW_BASE_URL || DEFAULT_PREVIEW_BASE_URL)
-const DOWNLOAD_BASE_URL = normalizeBaseUrl(
-  import.meta.env.VITE_OSS_DOWNLOAD_BASE_URL || DEFAULT_DOWNLOAD_BASE_URL,
-)
+const DOWNLOAD_BASE_URL = normalizeBaseUrl(import.meta.env.VITE_OSS_DOWNLOAD_BASE_URL || DEFAULT_DOWNLOAD_BASE_URL)
+
 const PREVIEW_PREFIX = normalizePrefix(import.meta.env.VITE_OSS_PREVIEW_PREFIX || 'public_min')
-const DOWNLOAD_PREFIX = normalizePrefix(import.meta.env.VITE_OSS_DOWNLOAD_PREFIX || 'public')
+const ORIGINAL_PREFIX = normalizePrefix(import.meta.env.VITE_OSS_ORIGINAL_PREFIX || 'public')
+const DOWNLOAD_PREFIX = normalizePrefix(import.meta.env.VITE_OSS_DOWNLOAD_PREFIX || ORIGINAL_PREFIX)
+
+const SVG_PLACEHOLDER_PREFIX = 'src/svg_resource'
 
 function normalizeBaseUrl(baseUrl) {
   return String(baseUrl || '').replace(/\/+$/, '')
@@ -23,69 +26,118 @@ function buildOssAsset(baseUrl, prefix, path) {
   return encodeURI(`${baseUrl}/${prefix}/${normalizedPath}`)
 }
 
-function createMediaAsset(path, originalPath = path) {
+function withVersion(url, version) {
+  const normalizedVersion = String(version || '').trim()
+  if (!normalizedVersion) {
+    return url
+  }
+  const joiner = url.includes('?') ? '&' : '?'
+  return `${url}${joiner}v=${encodeURIComponent(normalizedVersion)}`
+}
+
+function buildSvgPlaceholder(fileName) {
+  if (!fileName) {
+    return ''
+  }
+  return `${SVG_PLACEHOLDER_PREFIX}/${fileName}`
+}
+
+function createImageAsset(previewPath, originalPath = previewPath, placeholderFileName = '') {
   return {
-    previewUrl: buildOssAsset(PREVIEW_BASE_URL, PREVIEW_PREFIX, path),
+    previewUrl: buildOssAsset(PREVIEW_BASE_URL, PREVIEW_PREFIX, previewPath),
+    originalPreviewUrl: buildOssAsset(PREVIEW_BASE_URL, ORIGINAL_PREFIX, originalPath),
+    downloadUrl: buildOssAsset(DOWNLOAD_BASE_URL, DOWNLOAD_PREFIX, originalPath),
+    placeholderUrl: buildSvgPlaceholder(placeholderFileName),
+  }
+}
+
+function createVideoAsset(previewPath, originalPath = previewPath, previewVersion = '') {
+  return {
+    previewUrl: withVersion(buildOssAsset(PREVIEW_BASE_URL, PREVIEW_PREFIX, previewPath), previewVersion),
+    originalPreviewUrl: buildOssAsset(PREVIEW_BASE_URL, ORIGINAL_PREFIX, originalPath),
+    downloadUrl: buildOssAsset(DOWNLOAD_BASE_URL, DOWNLOAD_PREFIX, originalPath),
+  }
+}
+
+function createPosterAsset(previewPath, originalPath = previewPath) {
+  return {
+    previewUrl: buildOssAsset(PREVIEW_BASE_URL, PREVIEW_PREFIX, previewPath),
+    originalPreviewUrl: buildOssAsset(PREVIEW_BASE_URL, ORIGINAL_PREFIX, originalPath),
     downloadUrl: buildOssAsset(DOWNLOAD_BASE_URL, DOWNLOAD_PREFIX, originalPath),
   }
 }
 
 export const mediaAssets = {
   meta: {
-    logo: createMediaAsset('images/preview_q1/meta_logo.png', 'images/logo_rembg.png'),
-    favicon: createMediaAsset('logo.ico'),
+    logo: createImageAsset('images/preview_q1/meta_logo.png', 'images/logo_rembg.png'),
+    favicon: createImageAsset('logo.ico'),
   },
   hero: {
-    mainVideo: createMediaAsset('videos/enhance_wipe_cell_1080p_h264.mp4'),
+    mainVideo: createVideoAsset('videos/enhance_wipe_cell_1080p_h264.mp4'),
   },
   performance: {
-    demoImage: createMediaAsset(
+    demoImage: createImageAsset(
       'images/preview_q2/performance_demoImage.png',
       'images/Demonstration of improved imaging effect.svg',
+      'Demonstration of improved imaging effect.svg',
     ),
   },
   resultVideo: {
-    video1: createMediaAsset('videos/segment_last_30_merged_mini_h264.mp4'),
-    video1Poster: createMediaAsset('images/preview_q2/resultVideo_video1Poster.png', 'videos/segment_last_30_merged_mini_h264.mp4'),
-    video2: createMediaAsset('videos/SAM20M_endoscopy_00_EndoVis_2017_RIS_merged_h264.mp4'),
-    video2Poster: createMediaAsset('images/preview_q2/resultVideo_video2Poster.png', 'videos/SAM20M_endoscopy_00_EndoVis_2017_RIS_merged_h264.mp4'),
-    video3: createMediaAsset('videos/屏幕录制 2026-02-13 160516.mp4'),
-    video3Poster: createMediaAsset('images/preview_q1/resultVideo_video3Poster.png', 'videos/屏幕录制-封面.png'),
+    video1: createVideoAsset('videos/segment_last_30_merged_mini_h264.mp4', 'videos/segment_last_30_merged_mini_h264.mp4', '20260305a'),
+    video1Poster: createPosterAsset('images/preview_q2/resultVideo_video1Poster.png'),
+    video2: createVideoAsset('videos/SAM20M_endoscopy_00_EndoVis_2017_RIS_merged_h264.mp4', 'videos/SAM20M_endoscopy_00_EndoVis_2017_RIS_merged_h264.mp4', '20260305a'),
+    video2Poster: createPosterAsset('images/preview_q2/resultVideo_video2Poster.png'),
+    video3: createVideoAsset('videos/屏幕录制 2026-02-13 160516.mp4'),
+    video3Poster: createPosterAsset('images/preview_q1/resultVideo_video3Poster.png'),
   },
   dataset: {
-    previewImage: createMediaAsset('images/preview_q1/dataset_previewImage.png', 'images/Enhancement behavior dataset.svg'),
+    previewImage: createImageAsset(
+      'images/preview_q1/dataset_previewImage.png',
+      'images/Enhancement behavior dataset.svg',
+      'Enhancement behavior dataset.svg',
+    ),
   },
   extensibility: {
-    integratedCircuit: createMediaAsset(
+    integratedCircuit: createImageAsset(
       'images/preview_q1/extensibility_integratedCircuit.png',
       'images/Integrated circuit.svg',
+      'Integrated circuit.svg',
     ),
-    metallographicAnalysis: createMediaAsset('images/preview_q1/extensibility_metallographicAnalysis.png', 'images/metallographic analysis.svg'),
-    droneAerial: createMediaAsset(
+    metallographicAnalysis: createImageAsset(
+      'images/preview_q1/extensibility_metallographicAnalysis.png',
+      'images/metallographic analysis.svg',
+      'metallographic analysis.svg',
+    ),
+    droneAerial: createImageAsset(
       'images/preview_q2/extensibility_droneAerial.png',
       'images/Drone aerial photography.svg',
+      'Drone aerial photography.svg',
     ),
-    underwaterDrone: createMediaAsset(
+    underwaterDrone: createImageAsset(
       'images/preview_q2/extensibility_underwaterDrone.png',
       'images/Underwater drone.svg',
+      'Underwater drone.svg',
     ),
-    agriculturalRobot: createMediaAsset(
+    agriculturalRobot: createImageAsset(
       'images/preview_q2/extensibility_agriculturalRobot.png',
       'images/Agricultural harvesting robot perspective.svg',
+      'Agricultural harvesting robot perspective.svg',
     ),
-    spaceExploration: createMediaAsset(
+    spaceExploration: createImageAsset(
       'images/preview_q2/extensibility_spaceExploration.png',
       'images/Space exploration.svg',
+      'Space exploration.svg',
     ),
   },
   handDrawn: {
-    image: createMediaAsset(
+    image: createImageAsset(
       'images/preview_q1/handDrawn_image.png',
       'images/Hand drawn circuit diagram.svg',
+      'Hand drawn circuit diagram.svg',
     ),
   },
   tutorial: {
-    video: createMediaAsset('videos/System_Usage_Tutorial_h264.mp4'),
-    poster: createMediaAsset('images/preview_q1/tutorial_poster.png', 'videos/System_Usage_Tutorial_h264-封面.jpg'),
+    video: createVideoAsset('videos/System_Usage_Tutorial_h264.mp4'),
+    poster: createPosterAsset('images/preview_q1/tutorial_poster.png'),
   },
 }
