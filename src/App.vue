@@ -1646,7 +1646,12 @@ onBeforeUnmount(() => {
               v-if="resolveMediaSrc(siteContent.sections.performance.image.src)"
               :src="resolveMediaSrc(siteContent.sections.performance.image.src)"
               :alt="siteContent.sections.performance.image.alt"
-              :class="['media-image', 'progressive-image-final', { 'is-loaded': isProgressiveImageLoaded('performance_demo') }]"
+              :class="[
+                'media-image',
+                'progressive-image-final',
+                'progressive-image-final-force-visible',
+                { 'is-loaded': isProgressiveImageLoaded('performance_demo') },
+              ]"
               @load="markProgressiveImageLoaded('performance_demo')"
             />
           </div>
@@ -3112,7 +3117,7 @@ onBeforeUnmount(() => {
 }
 
 .performance-action-row {
-  margin-top: clamp(-22px, -1.8vw, -12px);
+  margin-top: clamp(4px, 0.7vw, 10px);
   position: relative;
   z-index: 3;
 }
@@ -3183,6 +3188,11 @@ onBeforeUnmount(() => {
   opacity: 0;
   visibility: hidden;
   transition: opacity 0.2s ease;
+}
+
+.progressive-image-final-force-visible {
+  opacity: 1;
+  visibility: visible;
 }
 
 .progressive-image-final.is-loaded {
