@@ -7,7 +7,7 @@ const DOWNLOAD_BASE_URL = normalizeBaseUrl(import.meta.env.VITE_OSS_DOWNLOAD_BAS
 const PLACEHOLDER_BASE_URL = normalizeBaseUrl(import.meta.env.VITE_OSS_PLACEHOLDER_BASE_URL || DEFAULT_PLACEHOLDER_BASE_URL)
 
 const PREVIEW_PREFIX = normalizePrefix(import.meta.env.VITE_OSS_PREVIEW_PREFIX || 'public_min')
-const ORIGINAL_PREFIX = normalizePrefix(import.meta.env.VITE_OSS_ORIGINAL_PREFIX || 'public')
+const ORIGINAL_PREFIX = 'public'
 const DOWNLOAD_PREFIX = normalizePrefix(import.meta.env.VITE_OSS_DOWNLOAD_PREFIX || ORIGINAL_PREFIX)
 const PLACEHOLDER_PREFIX = normalizePrefix(import.meta.env.VITE_OSS_PLACEHOLDER_PREFIX || 'svg_olaceholder')
 
@@ -78,10 +78,10 @@ export const mediaAssets = {
   },
   performance: {
     demoImage: createImageAsset(
-      'images/preview_q2/performance_demoImage.png',
+      'images/preview_q2/performance_demoImage_fix20260305.png',
       'images/Demonstration of improved imaging effect.svg',
       'Demonstration of improved imaging effect.svg',
-      '20260305b',
+      '20260305c',
     ),
   },
   resultVideo: {

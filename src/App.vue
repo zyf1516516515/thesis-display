@@ -117,18 +117,10 @@ const heroVideoGateVisible = ref(Boolean(siteContent.hero?.video?.src))
 const heroBulletListRef = ref(null)
 const heroMediaWrapRef = ref(null)
 const heroVideoRef = ref(null)
-const datasetLayoutRef = ref(null)
-const datasetTextRef = ref(null)
 const heroMediaHeightPx = ref(0)
-const datasetMetaShiftYPx = ref(0)
-const datasetCardTargetHeightPx = ref(0)
 const heroMediaWrapStyle = computed(() =>
   heroMediaHeightPx.value > 0 ? { height: `${heroMediaHeightPx.value}px` } : {},
 )
-const datasetCardStyle = computed(() => ({
-  '--dataset-meta-shift-y': `${datasetMetaShiftYPx.value}px`,
-  '--dataset-card-target-height': datasetCardTargetHeightPx.value > 0 ? `${datasetCardTargetHeightPx.value}px` : 'auto',
-}))
 const dnsCheckCache = new Map()
 const urlReachabilityCache = new Map()
 let originalPreviewFetchController = null
@@ -137,56 +129,6 @@ let originalPreviewRequestSeq = 0
 let heroVideoGateTimer = null
 let layoutSyncRaf = 0
 let heroResizeObserver = null
-let datasetResizeObserver = null
-
-function clampNumber(value, min, max) {
-  return Math.min(max, Math.max(min, value))
-}
-
-function findLastNonEmptyTextNode(rootEl) {
-  if (!rootEl || typeof document === 'undefined') {
-    return null
-  }
-  const nodeFilter = typeof NodeFilter !== 'undefined' ? NodeFilter.SHOW_TEXT : 4
-  const walker = document.createTreeWalker(rootEl, nodeFilter)
-  let lastTextNode = null
-  let currentNode = walker.nextNode()
-  while (currentNode) {
-    if ((currentNode.nodeValue || '').trim()) {
-      lastTextNode = currentNode
-    }
-    currentNode = walker.nextNode()
-  }
-  return lastTextNode
-}
-
-function getVisualTextBottom(element) {
-  if (!element) {
-    return 0
-  }
-  const fallbackRect = element.getBoundingClientRect()
-  if (typeof document === 'undefined') {
-    return fallbackRect.bottom
-  }
-
-  try {
-    const lastTextNode = findLastNonEmptyTextNode(element)
-    if (!lastTextNode) {
-      return fallbackRect.bottom
-    }
-    const range = document.createRange()
-    range.setStart(lastTextNode, lastTextNode.length)
-    range.setEnd(lastTextNode, lastTextNode.length)
-    const rects = range.getClientRects()
-    if (rects.length) {
-      return rects[rects.length - 1].bottom
-    }
-  } catch {
-    return fallbackRect.bottom
-  }
-
-  return fallbackRect.bottom
-}
 
 function syncHeroMediaHeight() {
   const bulletListEl = heroBulletListRef.value
@@ -199,37 +141,8 @@ function syncHeroMediaHeight() {
   heroMediaHeightPx.value = measured > 0 ? measured : 0
 }
 
-function syncDatasetMetaAlignment() {
-  const datasetLayoutEl = datasetLayoutRef.value
-  const datasetTextEl = datasetTextRef.value
-  if (!datasetLayoutEl) {
-    datasetMetaShiftYPx.value = 0
-    datasetCardTargetHeightPx.value = 0
-    return
-  }
-
-  const paragraphEl = datasetLayoutEl.querySelector('.dataset-text p')
-  const googleButtonEl = datasetLayoutEl.querySelector('.dataset-btn-row .pill-btn')
-  if (!paragraphEl || !googleButtonEl) {
-    datasetMetaShiftYPx.value = 0
-    datasetCardTargetHeightPx.value = 0
-    return
-  }
-
-  const paragraphRect = paragraphEl.getBoundingClientRect()
-  const textRect = datasetTextEl?.getBoundingClientRect()
-  const targetHeight = Math.ceil(textRect?.height || paragraphRect.height || 0)
-  datasetCardTargetHeightPx.value = clampNumber(targetHeight, 260, 920)
-
-  const paragraphTextBottom = getVisualTextBottom(paragraphEl)
-  const buttonRect = googleButtonEl.getBoundingClientRect()
-  const delta = Math.round(paragraphTextBottom - buttonRect.bottom)
-  datasetMetaShiftYPx.value = clampNumber(delta, -80, 260)
-}
-
 function syncHeroAndDatasetLayout() {
   syncHeroMediaHeight()
-  syncDatasetMetaAlignment()
 }
 
 function scheduleHeroAndDatasetLayoutSync() {
@@ -1092,12 +1005,26 @@ function resolvePosterSrc(src) {
 
 function resolvePreviewSrc(src) {
   const resolved = resolveMediaSrc(src)
-  return sanitizeDownloadUrlForAnonymousOss(resolved)
+  return sanitizeDownloadUrlForAnonymousOss(forceOriginalPublicPath(resolved))
 }
 
 function resolveDownloadSrc(src) {
   const resolved = resolveMediaSrc(src)
   return sanitizeDownloadUrlForAnonymousOss(resolved)
+}
+
+function forceOriginalPublicPath(rawUrl) {
+  if (!rawUrl) {
+    return ''
+  }
+  const rewritten = String(rawUrl).replace('/public_min/', '/public/')
+  try {
+    const parsed = new URL(rewritten)
+    parsed.pathname = parsed.pathname.replace('/public_min/', '/public/')
+    return parsed.toString()
+  } catch {
+    return rewritten
+  }
 }
 
 function markProgressiveImageLoaded(imageKey) {
@@ -1107,11 +1034,6 @@ function markProgressiveImageLoaded(imageKey) {
   const next = new Set(progressiveImageLoadedKeys.value)
   next.add(imageKey)
   progressiveImageLoadedKeys.value = next
-  if (imageKey === 'dataset_main') {
-    nextTick(() => {
-      scheduleHeroAndDatasetLayoutSync()
-    })
-  }
 }
 
 function isProgressiveImageLoaded(imageKey) {
@@ -1591,12 +1513,6 @@ onMounted(() => {
         })
         heroResizeObserver.observe(heroBulletListRef.value)
       }
-      if (datasetLayoutRef.value) {
-        datasetResizeObserver = new ResizeObserver(() => {
-          scheduleHeroAndDatasetLayoutSync()
-        })
-        datasetResizeObserver.observe(datasetLayoutRef.value)
-      }
     }
 
     if (typeof document !== 'undefined' && document.fonts?.ready) {
@@ -1625,10 +1541,6 @@ onBeforeUnmount(() => {
   if (heroResizeObserver) {
     heroResizeObserver.disconnect()
     heroResizeObserver = null
-  }
-  if (datasetResizeObserver) {
-    datasetResizeObserver.disconnect()
-    datasetResizeObserver = null
   }
   revokeCoverPreview()
   document.removeEventListener('visibilitychange', handleHeroPlaybackVisibilityRestore)
@@ -1815,12 +1727,12 @@ onBeforeUnmount(() => {
 
       <section :id="siteContent.sections.dataset.id" class="shell block-section anchor-block title-aligned-section">
         <h2 class="section-title"><span class="title-mark">◼</span>{{ siteContent.sections.dataset.title }}</h2>
-        <div ref="datasetLayoutRef" class="dataset-layout">
-          <div ref="datasetTextRef" class="dataset-text text-rect">
+        <div class="dataset-layout">
+          <div class="dataset-text text-rect">
             <p v-for="(line, index) in siteContent.sections.dataset.lines" :key="`dataset-line-${index}`">{{ line }}</p>
           </div>
 
-          <article class="dataset-card" :style="datasetCardStyle">
+          <article class="dataset-card">
             <h3 class="dataset-card-title">{{ siteContent.sections.dataset.cardTitle }}</h3>
             <div
               v-if="resolveMediaSrc(siteContent.sections.dataset.image.placeholderSrc)"
@@ -2807,7 +2719,7 @@ onBeforeUnmount(() => {
 
 .performance-image {
   width: var(--content-media-width);
-  margin: 0 auto;
+  margin: -4px auto 0;
   max-height: none;
 }
 
@@ -2915,7 +2827,7 @@ onBeforeUnmount(() => {
 .panel-title,
 .panel-subtitle,
 .sub-panel-title {
-  margin: 0 0 10px;
+  margin: 0 0 6px;
   text-align: center;
   font-size: clamp(16px, 1.45vw, 24px);
   line-height: 1.32;
@@ -3007,8 +2919,8 @@ onBeforeUnmount(() => {
 
 .dataset-layout {
   display: grid;
-  grid-template-columns: minmax(0, 47%) minmax(340px, 53%);
-  gap: 20px;
+  grid-template-columns: minmax(0, 45%) minmax(320px, 55%);
+  gap: 18px;
   align-items: start;
 }
 
@@ -3024,7 +2936,7 @@ onBeforeUnmount(() => {
 }
 
 .dataset-text {
-  max-width: 94%;
+  max-width: 90%;
   margin-right: auto;
   justify-content: flex-start;
 }
@@ -3051,16 +2963,10 @@ onBeforeUnmount(() => {
 }
 
 .dataset-card {
-  /* Enhancement behavior dataset.svg: 238x79，右侧主体明显更宽 */
-  --dataset-main-left-col: 49%;
-  --dataset-main-right-col: 51%;
-  --dataset-meta-shift-x: -4px;
-  --dataset-meta-shift-y: 0px;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto auto auto auto;
   align-items: start;
-  height: var(--dataset-card-target-height);
-  gap: 6px;
+  gap: 5px;
   background: transparent;
   border: 0;
   border-radius: 0;
@@ -3068,9 +2974,9 @@ onBeforeUnmount(() => {
 }
 
 .dataset-card-title {
-  margin: 0 auto 12px;
-  font-size: clamp(14px, 1.12vw, 19px);
-  width: min(74%, 460px);
+  margin: 0 auto 8px;
+  font-size: clamp(13px, 1.02vw, 17px);
+  width: min(66%, 420px);
   max-width: 100%;
   text-align: center;
 }
@@ -3085,7 +2991,7 @@ onBeforeUnmount(() => {
 }
 
 .dataset-image .media-image {
-  max-height: 100%;
+  max-height: min(220px, 32vh);
   width: 100%;
   object-fit: contain;
 }
@@ -3093,30 +2999,24 @@ onBeforeUnmount(() => {
 .dataset-label-row {
   margin-top: 0;
   display: grid;
-  grid-template-columns: minmax(0, var(--dataset-main-left-col)) minmax(0, var(--dataset-main-right-col));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   column-gap: clamp(8px, 1.1vw, 14px);
-  width: min(74%, 460px);
+  width: min(66%, 420px);
   margin-left: auto;
   margin-right: auto;
   color: #4f5d73;
-  font-size: clamp(11px, 0.86vw, 14px);
+  font-size: clamp(10px, 0.78vw, 13px);
   text-align: center;
-  transform: translate(var(--dataset-meta-shift-x), var(--dataset-meta-shift-y));
-  position: relative;
-  z-index: 3;
 }
 
 .dataset-btn-row {
   margin-top: 2px;
   display: grid;
-  grid-template-columns: minmax(0, var(--dataset-main-left-col)) minmax(0, var(--dataset-main-right-col));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   column-gap: clamp(8px, 1.1vw, 14px);
-  width: min(74%, 460px);
+  width: min(66%, 420px);
   margin-left: auto;
   margin-right: auto;
-  transform: translate(var(--dataset-meta-shift-x), var(--dataset-meta-shift-y));
-  position: relative;
-  z-index: 3;
 }
 
 .dataset-label-row span,
@@ -3126,17 +3026,17 @@ onBeforeUnmount(() => {
 
 .dataset-label-row span:nth-child(2),
 .dataset-btn-row .pill-btn:nth-child(2) {
-  transform: translateX(8px);
+  transform: none;
 }
 
 .dataset-card > .progressive-image-wrap {
-  width: min(74%, 460px);
+  width: min(66%, 420px);
 }
 
 .dataset-btn-row .pill-btn {
-  min-height: 36px;
-  font-size: clamp(11px, 0.85vw, 14px);
-  padding: 0 10px;
+  min-height: 34px;
+  font-size: clamp(10px, 0.76vw, 12px);
+  padding: 0 8px;
 }
 
 .tutorial-layout {
@@ -3212,7 +3112,7 @@ onBeforeUnmount(() => {
 }
 
 .performance-action-row {
-  margin-top: -30px;
+  margin-top: clamp(-22px, -1.8vw, -12px);
   position: relative;
   z-index: 3;
 }
