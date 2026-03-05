@@ -118,13 +118,16 @@ const heroBulletListRef = ref(null)
 const heroMediaWrapRef = ref(null)
 const heroVideoRef = ref(null)
 const datasetLayoutRef = ref(null)
+const datasetTextRef = ref(null)
 const heroMediaHeightPx = ref(0)
 const datasetMetaShiftYPx = ref(0)
+const datasetCardTargetHeightPx = ref(0)
 const heroMediaWrapStyle = computed(() =>
   heroMediaHeightPx.value > 0 ? { height: `${heroMediaHeightPx.value}px` } : {},
 )
 const datasetCardStyle = computed(() => ({
   '--dataset-meta-shift-y': `${datasetMetaShiftYPx.value}px`,
+  '--dataset-card-target-height': datasetCardTargetHeightPx.value > 0 ? `${datasetCardTargetHeightPx.value}px` : 'auto',
 }))
 const dnsCheckCache = new Map()
 const urlReachabilityCache = new Map()
@@ -198,8 +201,10 @@ function syncHeroMediaHeight() {
 
 function syncDatasetMetaAlignment() {
   const datasetLayoutEl = datasetLayoutRef.value
+  const datasetTextEl = datasetTextRef.value
   if (!datasetLayoutEl) {
     datasetMetaShiftYPx.value = 0
+    datasetCardTargetHeightPx.value = 0
     return
   }
 
@@ -207,13 +212,19 @@ function syncDatasetMetaAlignment() {
   const googleButtonEl = datasetLayoutEl.querySelector('.dataset-btn-row .pill-btn')
   if (!paragraphEl || !googleButtonEl) {
     datasetMetaShiftYPx.value = 0
+    datasetCardTargetHeightPx.value = 0
     return
   }
+
+  const paragraphRect = paragraphEl.getBoundingClientRect()
+  const textRect = datasetTextEl?.getBoundingClientRect()
+  const targetHeight = Math.ceil(textRect?.height || paragraphRect.height || 0)
+  datasetCardTargetHeightPx.value = clampNumber(targetHeight, 260, 920)
 
   const paragraphTextBottom = getVisualTextBottom(paragraphEl)
   const buttonRect = googleButtonEl.getBoundingClientRect()
   const delta = Math.round(paragraphTextBottom - buttonRect.bottom)
-  datasetMetaShiftYPx.value = clampNumber(delta, -60, 320)
+  datasetMetaShiftYPx.value = clampNumber(delta, -80, 260)
 }
 
 function syncHeroAndDatasetLayout() {
@@ -1805,7 +1816,7 @@ onBeforeUnmount(() => {
       <section :id="siteContent.sections.dataset.id" class="shell block-section anchor-block title-aligned-section">
         <h2 class="section-title"><span class="title-mark">◼</span>{{ siteContent.sections.dataset.title }}</h2>
         <div ref="datasetLayoutRef" class="dataset-layout">
-          <div class="dataset-text text-rect">
+          <div ref="datasetTextRef" class="dataset-text text-rect">
             <p v-for="(line, index) in siteContent.sections.dataset.lines" :key="`dataset-line-${index}`">{{ line }}</p>
           </div>
 
@@ -2526,9 +2537,9 @@ onBeforeUnmount(() => {
   --result-video-top-item-aspect-ratio: 16 / 5;
   --result-video-bottom-aspect-ratio: 1714 / 858;
   --result-video-1-scale: 1.1;
-  --hero-video-scale: 1.23;
-  --hero-video-object-position-x: 74%;
-  --hero-video-shift-x: 2.8%;
+  --hero-video-scale: 1.3;
+  --hero-video-object-position-x: 88%;
+  --hero-video-shift-x: 8%;
   min-height: 100vh;
   color: var(--text-main);
 }
@@ -2653,7 +2664,7 @@ onBeforeUnmount(() => {
 
 .content-mid-backdrop {
   position: relative;
-  margin-top: 14px;
+  margin-top: 26px;
   padding: 6px 0 34px;
 }
 
@@ -2752,8 +2763,10 @@ onBeforeUnmount(() => {
 .section-video {
   width: 100%;
   display: block;
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: 0;
+  box-shadow: none;
+  outline: none;
 }
 
 .hero-video {
@@ -2774,8 +2787,8 @@ onBeforeUnmount(() => {
 }
 
 .section-video.is-click-to-load {
-  border-style: dashed;
-  border-color: #9cb4d4;
+  border-style: none;
+  border-color: transparent;
   background: linear-gradient(180deg, #eef4fc, #e4edf8);
 }
 
@@ -3042,9 +3055,10 @@ onBeforeUnmount(() => {
   --dataset-main-right-col: 56%;
   --dataset-meta-shift-x: -20px;
   --dataset-meta-shift-y: 0px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  align-items: start;
+  height: var(--dataset-card-target-height);
   gap: 8px;
   background: transparent;
   border: 0;
@@ -3061,16 +3075,22 @@ onBeforeUnmount(() => {
 }
 
 .dataset-image {
-  height: auto;
+  height: 100%;
   min-height: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .dataset-image .media-image {
-  max-height: 212px;
+  max-height: 100%;
+  width: 100%;
+  object-fit: contain;
 }
 
 .dataset-label-row {
-  margin-top: auto;
+  margin-top: 0;
   display: grid;
   grid-template-columns: minmax(0, var(--dataset-main-left-col)) minmax(0, var(--dataset-main-right-col));
   column-gap: clamp(8px, 1.1vw, 14px);
@@ -3083,7 +3103,7 @@ onBeforeUnmount(() => {
 }
 
 .dataset-btn-row {
-  margin-top: 6px;
+  margin-top: 4px;
   display: grid;
   grid-template-columns: minmax(0, var(--dataset-main-left-col)) minmax(0, var(--dataset-main-right-col));
   column-gap: clamp(8px, 1.1vw, 14px);
@@ -3259,6 +3279,12 @@ onBeforeUnmount(() => {
 }
 
 .balanced-text-section > :not(.section-title) {
+  margin-left: 33px;
+  margin-right: 33px;
+  width: calc(100% - 66px);
+}
+
+.balanced-text-section .section-title {
   margin-left: 33px;
   margin-right: 33px;
   width: calc(100% - 66px);
@@ -4020,9 +4046,9 @@ onBeforeUnmount(() => {
     --content-media-width: 100%;
     --result-video-top-item-width: 100%;
     --result-video-1-scale: 1.02;
-    --hero-video-scale: 1.08;
-    --hero-video-object-position-x: 64%;
-    --hero-video-shift-x: 1.2%;
+    --hero-video-scale: 1.14;
+    --hero-video-object-position-x: 76%;
+    --hero-video-shift-x: 3.2%;
   }
 
   .header-inner {
@@ -4102,6 +4128,12 @@ onBeforeUnmount(() => {
   }
 
   .balanced-text-section > :not(.section-title) {
+    margin-left: 0;
+    margin-right: 0;
+    width: 100%;
+  }
+
+  .balanced-text-section .section-title {
     margin-left: 0;
     margin-right: 0;
     width: 100%;

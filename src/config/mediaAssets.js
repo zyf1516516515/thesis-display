@@ -42,9 +42,9 @@ function buildSvgPlaceholder(fileName) {
   return `${SVG_PLACEHOLDER_PREFIX}/${fileName}`
 }
 
-function createImageAsset(previewPath, originalPath = previewPath, placeholderFileName = '') {
+function createImageAsset(previewPath, originalPath = previewPath, placeholderFileName = '', previewVersion = '') {
   return {
-    previewUrl: buildOssAsset(PREVIEW_BASE_URL, PREVIEW_PREFIX, previewPath),
+    previewUrl: withVersion(buildOssAsset(PREVIEW_BASE_URL, PREVIEW_PREFIX, previewPath), previewVersion),
     originalPreviewUrl: buildOssAsset(PREVIEW_BASE_URL, ORIGINAL_PREFIX, originalPath),
     downloadUrl: buildOssAsset(DOWNLOAD_BASE_URL, DOWNLOAD_PREFIX, originalPath),
     placeholderUrl: buildSvgPlaceholder(placeholderFileName),
@@ -80,6 +80,7 @@ export const mediaAssets = {
       'images/preview_q2/performance_demoImage.png',
       'images/Demonstration of improved imaging effect.svg',
       'Demonstration of improved imaging effect.svg',
+      '20260305b',
     ),
   },
   resultVideo: {
@@ -102,31 +103,37 @@ export const mediaAssets = {
       'images/preview_q1/extensibility_integratedCircuit.png',
       'images/Integrated circuit.svg',
       'Integrated circuit.svg',
+      '20260305b',
     ),
     metallographicAnalysis: createImageAsset(
       'images/preview_q1/extensibility_metallographicAnalysis.png',
       'images/metallographic analysis.svg',
       'metallographic analysis.svg',
+      '20260305b',
     ),
     droneAerial: createImageAsset(
       'images/preview_q2/extensibility_droneAerial.png',
       'images/Drone aerial photography.svg',
       'Drone aerial photography.svg',
+      '20260305b',
     ),
     underwaterDrone: createImageAsset(
       'images/preview_q2/extensibility_underwaterDrone.png',
       'images/Underwater drone.svg',
       'Underwater drone.svg',
+      '20260305b',
     ),
     agriculturalRobot: createImageAsset(
       'images/preview_q2/extensibility_agriculturalRobot.png',
       'images/Agricultural harvesting robot perspective.svg',
       'Agricultural harvesting robot perspective.svg',
+      '20260305b',
     ),
     spaceExploration: createImageAsset(
       'images/preview_q2/extensibility_spaceExploration.png',
       'images/Space exploration.svg',
       'Space exploration.svg',
+      '20260305b',
     ),
   },
   handDrawn: {
@@ -134,6 +141,7 @@ export const mediaAssets = {
       'images/preview_q1/handDrawn_image.png',
       'images/Hand drawn circuit diagram.svg',
       'Hand drawn circuit diagram.svg',
+      '20260305b',
     ),
   },
   tutorial: {
