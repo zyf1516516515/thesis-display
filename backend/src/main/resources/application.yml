@@ -19,7 +19,7 @@ spring:
   mail:
     host: ${MAIL_HOST:smtp.163.com}
     port: ${MAIL_PORT:465}
-    username: ${MAIL_USERNAME:m15754335963@163.com}
+    username: ${MAIL_USERNAME:haojy5108@163.com}
     password: ${MAIL_SMTP_PASSWORD:}
     protocol: smtp
     properties:
@@ -44,7 +44,7 @@ management:
 
 app:
   mail:
-    sender-email: ${MAIL_SENDER_EMAIL:m15754335963@163.com}
+    sender-email: ${MAIL_SENDER_EMAIL:haojy5108@163.com}
     target-email: ${MAIL_TARGET_EMAIL:2401284861@qq.com}
     default-locale: ${MAIL_DEFAULT_LOCALE:en}
     zone-id: ${MAIL_QUOTA_ZONE:UTC}
