@@ -3212,7 +3212,9 @@ onBeforeUnmount(() => {
 }
 
 .performance-action-row {
-  margin-top: -8px;
+  margin-top: -30px;
+  position: relative;
+  z-index: 3;
 }
 
 .media-download-link {
