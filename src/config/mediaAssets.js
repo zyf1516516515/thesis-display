@@ -119,10 +119,10 @@ export const mediaAssets = {
       '20260305b',
     ),
     underwaterDrone: createImageAsset(
-      'images/preview_q2/extensibility_underwaterDrone.png',
+      'images/preview_q2/extensibility_underwaterDrone_fix20260305.png',
       'images/Underwater drone.svg',
       'Underwater drone.svg',
-      '20260305b',
+      '20260305c',
     ),
     agriculturalRobot: createImageAsset(
       'images/preview_q2/extensibility_agriculturalRobot.png',

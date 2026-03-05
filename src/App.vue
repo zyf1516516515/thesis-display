@@ -2537,9 +2537,9 @@ onBeforeUnmount(() => {
   --result-video-top-item-aspect-ratio: 16 / 5;
   --result-video-bottom-aspect-ratio: 1714 / 858;
   --result-video-1-scale: 1.1;
-  --hero-video-scale: 1.3;
-  --hero-video-object-position-x: 88%;
-  --hero-video-shift-x: 8%;
+  --hero-video-scale: 1.22;
+  --hero-video-object-position-x: 50%;
+  --hero-video-shift-x: -2.4%;
   min-height: 100vh;
   color: var(--text-main);
 }
@@ -3051,15 +3051,15 @@ onBeforeUnmount(() => {
 
 .dataset-card {
   /* Enhancement behavior dataset.svg: 238x79，右侧主体明显更宽 */
-  --dataset-main-left-col: 44%;
-  --dataset-main-right-col: 56%;
-  --dataset-meta-shift-x: -20px;
+  --dataset-main-left-col: 48%;
+  --dataset-main-right-col: 52%;
+  --dataset-meta-shift-x: -8px;
   --dataset-meta-shift-y: 0px;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto auto;
   align-items: start;
   height: var(--dataset-card-target-height);
-  gap: 8px;
+  gap: 6px;
   background: transparent;
   border: 0;
   border-radius: 0;
@@ -3068,8 +3068,8 @@ onBeforeUnmount(() => {
 
 .dataset-card-title {
   margin: 0 auto 12px;
-  font-size: clamp(16px, 1.3vw, 22px);
-  width: var(--content-media-width);
+  font-size: clamp(14px, 1.12vw, 19px);
+  width: min(82%, 520px);
   max-width: 100%;
   text-align: center;
 }
@@ -3094,8 +3094,11 @@ onBeforeUnmount(() => {
   display: grid;
   grid-template-columns: minmax(0, var(--dataset-main-left-col)) minmax(0, var(--dataset-main-right-col));
   column-gap: clamp(8px, 1.1vw, 14px);
+  width: min(82%, 520px);
+  margin-left: auto;
+  margin-right: auto;
   color: #4f5d73;
-  font-size: clamp(12px, 0.95vw, 16px);
+  font-size: clamp(11px, 0.86vw, 14px);
   text-align: center;
   transform: translate(var(--dataset-meta-shift-x), var(--dataset-meta-shift-y));
   position: relative;
@@ -3103,10 +3106,13 @@ onBeforeUnmount(() => {
 }
 
 .dataset-btn-row {
-  margin-top: 4px;
+  margin-top: 2px;
   display: grid;
   grid-template-columns: minmax(0, var(--dataset-main-left-col)) minmax(0, var(--dataset-main-right-col));
   column-gap: clamp(8px, 1.1vw, 14px);
+  width: min(82%, 520px);
+  margin-left: auto;
+  margin-right: auto;
   transform: translate(var(--dataset-meta-shift-x), var(--dataset-meta-shift-y));
   position: relative;
   z-index: 3;
@@ -3119,7 +3125,17 @@ onBeforeUnmount(() => {
 
 .dataset-label-row span:nth-child(2),
 .dataset-btn-row .pill-btn:nth-child(2) {
-  transform: translateX(20px);
+  transform: translateX(12px);
+}
+
+.dataset-card > .progressive-image-wrap {
+  width: min(82%, 520px);
+}
+
+.dataset-btn-row .pill-btn {
+  min-height: 36px;
+  font-size: clamp(11px, 0.85vw, 14px);
+  padding: 0 10px;
 }
 
 .tutorial-layout {
@@ -3134,6 +3150,7 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 8px;
   padding: 0;
+  padding-left: 33px;
   background: transparent;
   border: 0;
   border-radius: 0;
@@ -4046,9 +4063,9 @@ onBeforeUnmount(() => {
     --content-media-width: 100%;
     --result-video-top-item-width: 100%;
     --result-video-1-scale: 1.02;
-    --hero-video-scale: 1.14;
-    --hero-video-object-position-x: 76%;
-    --hero-video-shift-x: 3.2%;
+    --hero-video-scale: 1.16;
+    --hero-video-object-position-x: 50%;
+    --hero-video-shift-x: -1.2%;
   }
 
   .header-inner {
