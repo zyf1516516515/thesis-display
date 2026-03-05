@@ -1017,13 +1017,38 @@ function forceOriginalPublicPath(rawUrl) {
   if (!rawUrl) {
     return ''
   }
-  const rewritten = String(rawUrl).replace('/public_min/', '/public/')
+  const rewritten = String(rawUrl).replace(/\/public_min(?=\/|$)/g, '/public')
   try {
     const parsed = new URL(rewritten)
-    parsed.pathname = parsed.pathname.replace('/public_min/', '/public/')
+    parsed.pathname = parsed.pathname.replace(/\/public_min(?=\/|$)/g, '/public')
     return parsed.toString()
   } catch {
     return rewritten
+  }
+}
+
+function alignPreviewPathWithDownload(previewUrl, downloadUrl) {
+  if (!previewUrl || !downloadUrl) {
+    return previewUrl || ''
+  }
+
+  try {
+    const base = typeof window !== 'undefined' ? window.location.href : 'https://example.com'
+    const previewParsed = new URL(previewUrl, base)
+    const downloadParsed = new URL(downloadUrl, base)
+    const normalizedDownloadPath = downloadParsed.pathname.replace(/\/public_min(?=\/|$)/g, '/public')
+
+    if (!normalizedDownloadPath.includes('/public/')) {
+      return previewUrl
+    }
+
+    previewParsed.pathname = normalizedDownloadPath
+    if (/^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//.test(previewUrl)) {
+      return previewParsed.toString()
+    }
+    return `${previewParsed.pathname}${previewParsed.search}${previewParsed.hash}`
+  } catch {
+    return previewUrl
   }
 }
 
@@ -1348,8 +1373,8 @@ async function loadOriginalImageWithProgress(sourceUrl, requestId) {
 }
 
 function openOriginalMediaPreview(type, previewRawUrl, downloadRawUrl, title = '') {
-  const previewUrl = resolvePreviewSrc(previewRawUrl)
   const downloadUrl = resolveDownloadSrc(downloadRawUrl)
+  const previewUrl = alignPreviewPathWithDownload(resolvePreviewSrc(previewRawUrl), downloadUrl)
   if (!previewUrl || !downloadUrl) {
     return
   }
@@ -2380,7 +2405,7 @@ onBeforeUnmount(() => {
             </button>
             <a
               class="pill-btn original-media-btn"
-              :href="resolvePreviewSrc(originalPreviewMedia.previewUrl)"
+              :href="originalPreviewMedia.previewUrl"
               target="_blank"
               rel="noopener noreferrer"
             >
