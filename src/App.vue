@@ -114,12 +114,78 @@ const logoSrc = computed(() => resolveMediaSrc(siteContent.meta.logoUrl))
 const progressiveImageLoadedKeys = ref(new Set())
 const activatedPreviewVideoKeys = ref(new Set())
 const heroVideoGateVisible = ref(Boolean(siteContent.hero?.video?.src))
+const heroBulletListRef = ref(null)
+const heroMediaWrapRef = ref(null)
+const datasetLayoutRef = ref(null)
+const heroMediaHeightPx = ref(0)
+const datasetMetaShiftYPx = ref(0)
+const heroMediaWrapStyle = computed(() =>
+  heroMediaHeightPx.value > 0 ? { height: `${heroMediaHeightPx.value}px` } : {},
+)
+const datasetCardStyle = computed(() => ({
+  '--dataset-meta-shift-y': `${datasetMetaShiftYPx.value}px`,
+}))
 const dnsCheckCache = new Map()
 const urlReachabilityCache = new Map()
 let originalPreviewFetchController = null
 let originalPreviewObjectUrl = ''
 let originalPreviewRequestSeq = 0
 let heroVideoGateTimer = null
+let layoutSyncRaf = 0
+let heroResizeObserver = null
+let datasetResizeObserver = null
+
+function clampNumber(value, min, max) {
+  return Math.min(max, Math.max(min, value))
+}
+
+function syncHeroMediaHeight() {
+  const bulletListEl = heroBulletListRef.value
+  if (!bulletListEl) {
+    heroMediaHeightPx.value = 0
+    return
+  }
+  const measured = Math.round(bulletListEl.getBoundingClientRect().height)
+  heroMediaHeightPx.value = measured > 0 ? measured : 0
+}
+
+function syncDatasetMetaAlignment() {
+  const datasetLayoutEl = datasetLayoutRef.value
+  if (!datasetLayoutEl) {
+    datasetMetaShiftYPx.value = 0
+    return
+  }
+
+  const paragraphEl = datasetLayoutEl.querySelector('.dataset-text p')
+  const buttonRowEl = datasetLayoutEl.querySelector('.dataset-btn-row')
+  if (!paragraphEl || !buttonRowEl) {
+    datasetMetaShiftYPx.value = 0
+    return
+  }
+
+  const paragraphRect = paragraphEl.getBoundingClientRect()
+  const buttonRect = buttonRowEl.getBoundingClientRect()
+  const delta = Math.round(paragraphRect.bottom - buttonRect.bottom)
+  datasetMetaShiftYPx.value = clampNumber(delta, -120, 120)
+}
+
+function syncHeroAndDatasetLayout() {
+  syncHeroMediaHeight()
+  syncDatasetMetaAlignment()
+}
+
+function scheduleHeroAndDatasetLayoutSync() {
+  if (typeof window === 'undefined') {
+    return
+  }
+  if (layoutSyncRaf) {
+    cancelAnimationFrame(layoutSyncRaf)
+  }
+  layoutSyncRaf = window.requestAnimationFrame(() => {
+    layoutSyncRaf = 0
+    syncHeroAndDatasetLayout()
+  })
+}
 
 function setBodyScrollLock(locked) {
   if (typeof document === 'undefined') {
@@ -909,6 +975,17 @@ watch(
   },
 )
 
+watch(
+  heroVideoGateVisible,
+  (isVisible) => {
+    if (!isVisible) {
+      nextTick(() => {
+        scheduleHeroAndDatasetLayoutSync()
+      })
+    }
+  },
+)
+
 function scrollToAnchor(anchorId, updateHash = true) {
   const targetEl = document.getElementById(anchorId)
   if (!targetEl) {
@@ -971,6 +1048,11 @@ function markProgressiveImageLoaded(imageKey) {
   const next = new Set(progressiveImageLoadedKeys.value)
   next.add(imageKey)
   progressiveImageLoadedKeys.value = next
+  if (imageKey === 'dataset_main') {
+    nextTick(() => {
+      scheduleHeroAndDatasetLayoutSync()
+    })
+  }
 }
 
 function isProgressiveImageLoaded(imageKey) {
@@ -1403,11 +1485,39 @@ onMounted(() => {
 
   window.addEventListener('hashchange', handleHashChange)
   window.addEventListener('keydown', handleGlobalKeydown)
+  window.addEventListener('resize', scheduleHeroAndDatasetLayoutSync)
   if (heroVideoGateVisible.value) {
     heroVideoGateTimer = setTimeout(() => {
       markHeroVideoReady()
     }, 9000)
   }
+
+  nextTick(() => {
+    scheduleHeroAndDatasetLayoutSync()
+
+    if (typeof ResizeObserver !== 'undefined') {
+      if (heroBulletListRef.value) {
+        heroResizeObserver = new ResizeObserver(() => {
+          scheduleHeroAndDatasetLayoutSync()
+        })
+        heroResizeObserver.observe(heroBulletListRef.value)
+      }
+      if (datasetLayoutRef.value) {
+        datasetResizeObserver = new ResizeObserver(() => {
+          scheduleHeroAndDatasetLayoutSync()
+        })
+        datasetResizeObserver.observe(datasetLayoutRef.value)
+      }
+    }
+
+    if (typeof document !== 'undefined' && document.fonts?.ready) {
+      document.fonts.ready
+        .then(() => {
+          scheduleHeroAndDatasetLayoutSync()
+        })
+        .catch(() => {})
+    }
+  })
 })
 
 onBeforeUnmount(() => {
@@ -1419,7 +1529,20 @@ onBeforeUnmount(() => {
     clearTimeout(heroVideoGateTimer)
     heroVideoGateTimer = null
   }
+  if (layoutSyncRaf) {
+    cancelAnimationFrame(layoutSyncRaf)
+    layoutSyncRaf = 0
+  }
+  if (heroResizeObserver) {
+    heroResizeObserver.disconnect()
+    heroResizeObserver = null
+  }
+  if (datasetResizeObserver) {
+    datasetResizeObserver.disconnect()
+    datasetResizeObserver = null
+  }
   revokeCoverPreview()
+  window.removeEventListener('resize', scheduleHeroAndDatasetLayoutSync)
   window.removeEventListener('hashchange', handleHashChange)
   window.removeEventListener('keydown', handleGlobalKeydown)
 })
@@ -1446,21 +1569,19 @@ onBeforeUnmount(() => {
     <main class="page-main" v-show="!heroVideoGateVisible">
       <div class="first-screen">
         <section class="shell hero-section">
-          <div class="hero-content">
-            <h2 class="focus-title">{{ siteContent.hero.title }}</h2>
-            <div class="hero-bullet-list">
-              <div class="arrow-group" v-for="(bullet, index) in siteContent.hero.bullets" :key="`hero-bullet-${index}`">
-                <div class="arrow-icon">➢</div>
-                <div class="arrow-lines">
-                  <p v-for="(line, lineIndex) in bullet" :key="`hero-bullet-line-${index}-${lineIndex}`" class="line-text">
-                    {{ line }}
-                  </p>
-                </div>
+          <h2 class="focus-title">{{ siteContent.hero.title }}</h2>
+          <div ref="heroBulletListRef" class="hero-bullet-list">
+            <div class="arrow-group" v-for="(bullet, index) in siteContent.hero.bullets" :key="`hero-bullet-${index}`">
+              <div class="arrow-icon">➢</div>
+              <div class="arrow-lines">
+                <p v-for="(line, lineIndex) in bullet" :key="`hero-bullet-line-${index}-${lineIndex}`" class="line-text">
+                  {{ line }}
+                </p>
               </div>
             </div>
           </div>
 
-          <div class="hero-media-wrap">
+          <div ref="heroMediaWrapRef" class="hero-media-wrap" :style="heroMediaWrapStyle">
             <video
               v-if="resolveMediaSrc(siteContent.hero.video.src)"
               class="hero-video"
@@ -1508,9 +1629,10 @@ onBeforeUnmount(() => {
           <h3 class="panel-title">{{ siteContent.sections.performance.panelTitle }}</h3>
           <div
             v-if="resolveMediaSrc(siteContent.sections.performance.image.placeholderSrc)"
-            :class="['progressive-image-wrap', 'performance-image']"
+            :class="['progressive-image-wrap', 'performance-image', { 'is-loaded': isProgressiveImageLoaded('performance_demo') }]"
           >
             <img
+              v-if="!isProgressiveImageLoaded('performance_demo')"
               :src="resolveMediaSrc(siteContent.sections.performance.image.placeholderSrc)"
               :alt="`${siteContent.sections.performance.image.alt} placeholder`"
               class="media-image progressive-image-placeholder"
@@ -1598,17 +1720,21 @@ onBeforeUnmount(() => {
         </article>
       </section>
 
-      <section :id="siteContent.sections.dataset.id" class="shell block-section anchor-block">
+      <section :id="siteContent.sections.dataset.id" class="shell block-section anchor-block title-aligned-section">
         <h2 class="section-title"><span class="title-mark">◼</span>{{ siteContent.sections.dataset.title }}</h2>
-        <div class="dataset-layout">
+        <div ref="datasetLayoutRef" class="dataset-layout">
           <div class="dataset-text text-rect">
             <p v-for="(line, index) in siteContent.sections.dataset.lines" :key="`dataset-line-${index}`">{{ line }}</p>
           </div>
 
-          <article class="dataset-card">
+          <article class="dataset-card" :style="datasetCardStyle">
             <h3 class="dataset-card-title">{{ siteContent.sections.dataset.cardTitle }}</h3>
-            <div v-if="resolveMediaSrc(siteContent.sections.dataset.image.placeholderSrc)" class="progressive-image-wrap dataset-image">
+            <div
+              v-if="resolveMediaSrc(siteContent.sections.dataset.image.placeholderSrc)"
+              :class="['progressive-image-wrap', 'dataset-image', { 'is-loaded': isProgressiveImageLoaded('dataset_main') }]"
+            >
               <img
+                v-if="!isProgressiveImageLoaded('dataset_main')"
                 :src="resolveMediaSrc(siteContent.sections.dataset.image.placeholderSrc)"
                 :alt="`${siteContent.sections.dataset.image.alt} placeholder`"
                 class="media-image progressive-image-placeholder"
@@ -1639,7 +1765,7 @@ onBeforeUnmount(() => {
         </div>
       </section>
 
-      <section class="shell block-section">
+      <section class="shell block-section title-aligned-section">
         <h2 class="section-title"><span class="title-mark">◼</span>{{ siteContent.sections.extensibility.title }}</h2>
         <div class="intro-lines text-rect">
           <p v-for="(line, index) in siteContent.sections.extensibility.introLines" :key="`ext-line-${index}`">{{ line }}</p>
@@ -1653,9 +1779,14 @@ onBeforeUnmount(() => {
           <h3 class="panel-subtitle">{{ block.title }}</h3>
           <div
             v-if="resolveMediaSrc(block.image.placeholderSrc)"
-            :class="['progressive-image-wrap', { 'ext-large-image': ['ext_3', 'ext_4', 'ext_5', 'ext_6'].includes(block.key) }]"
+            :class="[
+              'progressive-image-wrap',
+              { 'ext-large-image': ['ext_3', 'ext_4', 'ext_5', 'ext_6'].includes(block.key) },
+              { 'is-loaded': isProgressiveImageLoaded(`ext_${block.key}`) },
+            ]"
           >
             <img
+              v-if="!isProgressiveImageLoaded(`ext_${block.key}`)"
               :src="resolveMediaSrc(block.image.placeholderSrc)"
               :alt="`${block.image.alt} placeholder`"
               class="media-image progressive-image-placeholder"
@@ -1683,11 +1814,15 @@ onBeforeUnmount(() => {
         </article>
       </section>
 
-      <section class="shell block-section">
+      <section class="shell block-section title-aligned-section">
         <article class="panel-card compact">
           <h3 class="panel-subtitle">{{ siteContent.sections.handDrawn.title }}</h3>
-          <div v-if="resolveMediaSrc(siteContent.sections.handDrawn.image.placeholderSrc)" class="progressive-image-wrap">
+          <div
+            v-if="resolveMediaSrc(siteContent.sections.handDrawn.image.placeholderSrc)"
+            :class="['progressive-image-wrap', { 'is-loaded': isProgressiveImageLoaded('hand_drawn') }]"
+          >
             <img
+              v-if="!isProgressiveImageLoaded('hand_drawn')"
               :src="resolveMediaSrc(siteContent.sections.handDrawn.image.placeholderSrc)"
               :alt="`${siteContent.sections.handDrawn.image.alt} placeholder`"
               class="media-image progressive-image-placeholder"
@@ -1747,35 +1882,35 @@ onBeforeUnmount(() => {
         </div>
       </section>
 
-      <section class="shell block-section">
+      <section class="shell block-section title-aligned-section">
         <h2 class="section-title"><span class="title-mark">◼</span>{{ siteContent.sections.dataRelease.title }}</h2>
         <div class="intro-lines text-rect">
           <p v-for="(line, index) in siteContent.sections.dataRelease.lines" :key="`release-line-${index}`">{{ line }}</p>
         </div>
         <button
           type="button"
-          class="pill-btn long-btn section-cta"
+          class="pill-btn long-btn section-cta section-cta-wide"
           @click="openDatasetSubmissionModal"
         >
           {{ siteContent.sections.dataRelease.button.label }}
         </button>
       </section>
 
-      <section :id="siteContent.sections.competition.id" class="shell block-section anchor-block">
+      <section :id="siteContent.sections.competition.id" class="shell block-section anchor-block title-aligned-section">
         <h2 class="section-title"><span class="title-mark">◼</span>{{ siteContent.sections.competition.title }}</h2>
         <div class="intro-lines text-rect">
           <p v-for="(line, index) in siteContent.sections.competition.lines" :key="`competition-line-${index}`">{{ line }}</p>
         </div>
         <button
           type="button"
-          class="pill-btn pill-btn-paper long-btn section-cta"
+          class="pill-btn pill-btn-paper long-btn section-cta section-cta-wide"
           @click="openComingSoon(siteContent.sections.competition.button.key)"
         >
           {{ siteContent.sections.competition.button.label }}
         </button>
       </section>
 
-      <section :id="siteContent.sections.declaration.id" class="shell block-section anchor-block">
+      <section :id="siteContent.sections.declaration.id" class="shell block-section anchor-block title-aligned-section">
         <h2 class="section-title"><span class="title-mark">◼</span>{{ siteContent.sections.declaration.title }}</h2>
         <p class="declaration-text text-rect">
           {{ siteContent.sections.declaration.paragraph }}
@@ -2265,6 +2400,8 @@ onBeforeUnmount(() => {
   background: #ffffff;
   color: #1d2738;
   font-family: 'Montserrat', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
 }
 
@@ -2283,7 +2420,7 @@ onBeforeUnmount(() => {
   --brand-strong: #1e4f90;
   --brand-soft: rgba(36, 94, 168, 0.14);
   --shadow-soft: 0 12px 30px rgba(18, 42, 77, 0.1);
-  --performance-media-width: 92%;
+  --performance-media-width: 100%;
   --result-video-top-width: 92%;
   --result-video-bottom-width: 92%;
   --result-video-top-gap: 14px;
@@ -2402,16 +2539,18 @@ onBeforeUnmount(() => {
 }
 
 .first-screen {
-  min-height: calc(100vh - 84px);
+  min-height: clamp(540px, calc(100vh - 210px), 740px);
   display: flex;
   flex-direction: column;
-  justify-content: flex-start;
+  justify-content: space-between;
+  gap: 6px;
+  padding-bottom: 2px;
 }
 
 .content-mid-backdrop {
   position: relative;
-  margin-top: 18px;
-  padding: 18px 0 36px;
+  margin-top: 0;
+  padding: 6px 0 34px;
 }
 
 .content-mid-backdrop::before {
@@ -2435,18 +2574,16 @@ onBeforeUnmount(() => {
 .hero-section {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(320px, 39%);
-  gap: 28px;
-  align-items: stretch;
+  grid-template-rows: auto auto;
+  gap: 22px;
+  align-items: start;
   padding: 0;
 }
 
-.hero-content {
-  display: flex;
-  flex-direction: column;
-}
-
 .focus-title {
-  margin: 2px 0 16px;
+  grid-column: 1;
+  grid-row: 1;
+  margin: 2px 0 12px;
   font-size: clamp(31px, 3.7vw, 46px);
   font-weight: 800;
   color: #162740;
@@ -2454,17 +2591,19 @@ onBeforeUnmount(() => {
 }
 
 .hero-bullet-list {
+  grid-column: 1;
+  grid-row: 2;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  flex: 1;
-  justify-content: space-between;
+  gap: clamp(12px, 1.36vw, 20px);
+  justify-content: flex-start;
+  align-self: stretch;
 }
 
 .arrow-group {
   display: flex;
   gap: 12px;
-  margin-bottom: 10px;
+  margin: 0;
 }
 
 .arrow-icon {
@@ -2484,19 +2623,25 @@ onBeforeUnmount(() => {
 .line-text {
   margin: 0;
   font-size: clamp(16px, 1.26vw, 19px);
-  line-height: 1.42;
+  line-height: 1.68;
   color: #27364e;
-  text-align: left;
+  text-align: justify;
+  text-justify: inter-word;
   hyphens: auto;
   overflow-wrap: break-word;
+  letter-spacing: 0.003em;
 }
 
 .hero-media-wrap {
+  grid-column: 2;
+  grid-row: 2;
   position: relative;
   margin-top: 0;
   width: 100%;
-  min-height: 340px;
-  height: 100%;
+  min-height: 0;
+  height: auto;
+  align-self: stretch;
+  overflow: hidden;
 }
 
 .hero-video,
@@ -2511,6 +2656,8 @@ onBeforeUnmount(() => {
   background: transparent;
   object-fit: cover;
   object-position: center;
+  position: absolute;
+  inset: 0;
   height: 100%;
 }
 
@@ -2545,13 +2692,17 @@ onBeforeUnmount(() => {
   max-height: none;
 }
 
+.performance-image .media-image {
+  max-height: none;
+}
+
 .nav-section {
   display: flex;
   justify-content: center;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin: 22px auto 0;
+  flex-wrap: nowrap;
+  gap: clamp(28px, 4.5vw, 74px);
+  margin: 6px auto 0;
   padding: 0;
 }
 
@@ -2592,9 +2743,9 @@ onBeforeUnmount(() => {
 }
 
 .nav-section .pill-btn {
-  width: clamp(98px, 10.8vw, 126px);
-  min-width: clamp(98px, 10.8vw, 126px);
-  max-width: clamp(98px, 10.8vw, 126px);
+  width: clamp(94px, 10.2vw, 122px);
+  min-width: clamp(94px, 10.2vw, 122px);
+  max-width: clamp(94px, 10.2vw, 122px);
 }
 
 .long-btn {
@@ -2603,7 +2754,7 @@ onBeforeUnmount(() => {
 }
 
 .block-section {
-  margin-top: 22px;
+  margin-top: 18px;
   padding: 0;
 }
 
@@ -2613,6 +2764,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 9px;
   font-size: clamp(20px, 2.05vw, 30px);
+  line-height: 1.22;
   color: var(--text-main);
   font-weight: 800;
   letter-spacing: 0.008em;
@@ -2648,6 +2800,7 @@ onBeforeUnmount(() => {
   margin: 0 0 10px;
   text-align: center;
   font-size: clamp(16px, 1.45vw, 24px);
+  line-height: 1.32;
   font-weight: 700;
   color: #22324a;
 }
@@ -2718,9 +2871,9 @@ onBeforeUnmount(() => {
 
 .dataset-layout {
   display: grid;
-  grid-template-columns: minmax(0, 56%) minmax(320px, 44%);
-  gap: 20px;
-  align-items: stretch;
+  grid-template-columns: minmax(0, 51%) minmax(340px, 49%);
+  gap: 24px;
+  align-items: start;
 }
 
 .dataset-text,
@@ -2739,17 +2892,24 @@ onBeforeUnmount(() => {
   justify-content: flex-start;
 }
 
+.dataset-text p {
+  flex: 0 0 auto;
+}
+
 .dataset-text p,
 .intro-lines p,
 .tutorial-item p,
 .declaration-text {
   margin: 0;
   font-size: clamp(14px, 0.96vw, 17px);
-  line-height: 1.5;
+  line-height: 1.72;
   color: #2a3a52;
-  text-align: left;
+  text-align: justify;
+  text-justify: inter-word;
   hyphens: auto;
   overflow-wrap: break-word;
+  letter-spacing: 0.003em;
+  word-spacing: 0.02em;
 }
 
 .dataset-card {
@@ -2757,8 +2917,10 @@ onBeforeUnmount(() => {
   --dataset-main-left-col: 44%;
   --dataset-main-right-col: 56%;
   --dataset-meta-shift-x: -20px;
+  --dataset-meta-shift-y: 0px;
   display: flex;
   flex-direction: column;
+  justify-content: space-between;
   background: transparent;
   border: 0;
   border-radius: 0;
@@ -2766,7 +2928,9 @@ onBeforeUnmount(() => {
 }
 
 .dataset-card-title {
+  margin-bottom: 12px;
   font-size: clamp(16px, 1.3vw, 22px);
+  text-align: left;
 }
 
 .dataset-image {
@@ -2775,18 +2939,18 @@ onBeforeUnmount(() => {
 }
 
 .dataset-image .media-image {
-  max-height: 220px;
+  max-height: 228px;
 }
 
 .dataset-label-row {
-  margin-top: 6px;
+  margin-top: auto;
   display: grid;
   grid-template-columns: minmax(0, var(--dataset-main-left-col)) minmax(0, var(--dataset-main-right-col));
   column-gap: clamp(8px, 1.1vw, 14px);
   color: #4f5d73;
   font-size: clamp(12px, 0.95vw, 16px);
   text-align: center;
-  transform: translateX(var(--dataset-meta-shift-x));
+  transform: translate(var(--dataset-meta-shift-x), var(--dataset-meta-shift-y));
 }
 
 .dataset-btn-row {
@@ -2794,7 +2958,7 @@ onBeforeUnmount(() => {
   display: grid;
   grid-template-columns: minmax(0, var(--dataset-main-left-col)) minmax(0, var(--dataset-main-right-col));
   column-gap: clamp(8px, 1.1vw, 14px);
-  transform: translateX(var(--dataset-meta-shift-x));
+  transform: translate(var(--dataset-meta-shift-x), var(--dataset-meta-shift-y));
 }
 
 .dataset-label-row span,
@@ -2856,7 +3020,7 @@ onBeforeUnmount(() => {
 }
 
 .section-cta {
-  margin-top: 26px;
+  margin-top: 18px;
 }
 
 .media-action-row {
@@ -2915,16 +3079,33 @@ onBeforeUnmount(() => {
   z-index: 1;
 }
 
+.progressive-image-wrap.is-loaded .progressive-image-placeholder {
+  display: none;
+}
+
 .progressive-image-final {
   position: absolute;
   inset: 0;
   z-index: 2;
   opacity: 0;
-  transition: opacity 0.24s ease;
+  visibility: hidden;
+  transition: opacity 0.2s ease;
 }
 
 .progressive-image-final.is-loaded {
+  position: relative;
+  inset: auto;
   opacity: 1;
+  visibility: visible;
+}
+
+.title-aligned-section > :not(.section-title) {
+  margin-left: 33px;
+  width: calc(100% - 33px);
+}
+
+.section-cta-wide {
+  width: 100%;
 }
 
 .ext-large-image {
@@ -3708,12 +3889,17 @@ onBeforeUnmount(() => {
   }
 
   .hero-media-wrap {
+    grid-column: 1;
+    grid-row: 3;
     margin-top: 0;
-    min-height: 250px;
+    height: auto !important;
+    min-height: 0;
+    aspect-ratio: 16 / 9;
   }
 
   .nav-section {
     justify-content: center;
+    flex-wrap: wrap;
     margin-top: 16px;
   }
 
@@ -3742,6 +3928,11 @@ onBeforeUnmount(() => {
   .dataset-layout,
   .tutorial-layout {
     grid-template-columns: 1fr;
+  }
+
+  .title-aligned-section > :not(.section-title) {
+    margin-left: 0;
+    width: 100%;
   }
 
   .dataset-text,
