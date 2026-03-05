@@ -116,6 +116,7 @@ const activatedPreviewVideoKeys = ref(new Set())
 const heroVideoGateVisible = ref(Boolean(siteContent.hero?.video?.src))
 const heroBulletListRef = ref(null)
 const heroMediaWrapRef = ref(null)
+const heroVideoRef = ref(null)
 const datasetLayoutRef = ref(null)
 const heroMediaHeightPx = ref(0)
 const datasetMetaShiftYPx = ref(0)
@@ -139,6 +140,51 @@ function clampNumber(value, min, max) {
   return Math.min(max, Math.max(min, value))
 }
 
+function findLastNonEmptyTextNode(rootEl) {
+  if (!rootEl || typeof document === 'undefined') {
+    return null
+  }
+  const nodeFilter = typeof NodeFilter !== 'undefined' ? NodeFilter.SHOW_TEXT : 4
+  const walker = document.createTreeWalker(rootEl, nodeFilter)
+  let lastTextNode = null
+  let currentNode = walker.nextNode()
+  while (currentNode) {
+    if ((currentNode.nodeValue || '').trim()) {
+      lastTextNode = currentNode
+    }
+    currentNode = walker.nextNode()
+  }
+  return lastTextNode
+}
+
+function getVisualTextBottom(element) {
+  if (!element) {
+    return 0
+  }
+  const fallbackRect = element.getBoundingClientRect()
+  if (typeof document === 'undefined') {
+    return fallbackRect.bottom
+  }
+
+  try {
+    const lastTextNode = findLastNonEmptyTextNode(element)
+    if (!lastTextNode) {
+      return fallbackRect.bottom
+    }
+    const range = document.createRange()
+    range.setStart(lastTextNode, lastTextNode.length)
+    range.setEnd(lastTextNode, lastTextNode.length)
+    const rects = range.getClientRects()
+    if (rects.length) {
+      return rects[rects.length - 1].bottom
+    }
+  } catch {
+    return fallbackRect.bottom
+  }
+
+  return fallbackRect.bottom
+}
+
 function syncHeroMediaHeight() {
   const bulletListEl = heroBulletListRef.value
   if (!bulletListEl) {
@@ -158,17 +204,17 @@ function syncDatasetMetaAlignment() {
   }
 
   const paragraphEl = datasetLayoutEl.querySelector('.dataset-text p')
-  const buttonRowEl = datasetLayoutEl.querySelector('.dataset-btn-row')
-  if (!paragraphEl || !buttonRowEl) {
+  const googleButtonEl = datasetLayoutEl.querySelector('.dataset-btn-row .pill-btn')
+  if (!paragraphEl || !googleButtonEl) {
     datasetMetaShiftYPx.value = 0
     return
   }
 
-  const paragraphRect = paragraphEl.getBoundingClientRect()
-  const buttonRect = buttonRowEl.getBoundingClientRect()
-  const delta = Math.round(paragraphRect.bottom - buttonRect.bottom)
+  const paragraphTextBottom = getVisualTextBottom(paragraphEl)
+  const buttonTextBottom = getVisualTextBottom(googleButtonEl)
+  const delta = Math.round(paragraphTextBottom - buttonTextBottom)
   // Only allow downward compensation to prevent the image area from covering labels/buttons.
-  datasetMetaShiftYPx.value = clampNumber(delta, 0, 280)
+  datasetMetaShiftYPx.value = clampNumber(delta, 0, 320)
 }
 
 function syncHeroAndDatasetLayout() {
@@ -983,6 +1029,7 @@ watch(
     if (!isVisible) {
       nextTick(() => {
         scheduleHeroAndDatasetLayoutSync()
+        ensureHeroVideoPlayback()
       })
     }
   },
@@ -1121,10 +1168,37 @@ function markHeroVideoReady() {
 
 function handleHeroVideoReady() {
   markHeroVideoReady()
+  nextTick(() => {
+    ensureHeroVideoPlayback()
+  })
 }
 
 function handleHeroVideoError() {
   markHeroVideoReady()
+}
+
+function ensureHeroVideoPlayback() {
+  const heroVideoEl = heroVideoRef.value
+  if (!heroVideoEl || heroVideoGateVisible.value) {
+    return
+  }
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+    return
+  }
+  if (!heroVideoEl.paused && !heroVideoEl.ended) {
+    return
+  }
+  const maybePromise = heroVideoEl.play()
+  if (maybePromise && typeof maybePromise.catch === 'function') {
+    maybePromise.catch(() => {})
+  }
+}
+
+function handleHeroPlaybackVisibilityRestore() {
+  if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+    return
+  }
+  ensureHeroVideoPlayback()
 }
 
 function isLikelySignedOssUrl(rawUrl) {
@@ -1488,6 +1562,9 @@ onMounted(() => {
   window.addEventListener('hashchange', handleHashChange)
   window.addEventListener('keydown', handleGlobalKeydown)
   window.addEventListener('resize', scheduleHeroAndDatasetLayoutSync)
+  window.addEventListener('pageshow', handleHeroPlaybackVisibilityRestore)
+  window.addEventListener('focus', handleHeroPlaybackVisibilityRestore)
+  document.addEventListener('visibilitychange', handleHeroPlaybackVisibilityRestore)
   if (heroVideoGateVisible.value) {
     heroVideoGateTimer = setTimeout(() => {
       markHeroVideoReady()
@@ -1544,6 +1621,9 @@ onBeforeUnmount(() => {
     datasetResizeObserver = null
   }
   revokeCoverPreview()
+  document.removeEventListener('visibilitychange', handleHeroPlaybackVisibilityRestore)
+  window.removeEventListener('pageshow', handleHeroPlaybackVisibilityRestore)
+  window.removeEventListener('focus', handleHeroPlaybackVisibilityRestore)
   window.removeEventListener('resize', scheduleHeroAndDatasetLayoutSync)
   window.removeEventListener('hashchange', handleHashChange)
   window.removeEventListener('keydown', handleGlobalKeydown)
@@ -1586,6 +1666,7 @@ onBeforeUnmount(() => {
           <div ref="heroMediaWrapRef" class="hero-media-wrap" :style="heroMediaWrapStyle">
             <video
               v-if="resolveMediaSrc(siteContent.hero.video.src)"
+              ref="heroVideoRef"
               class="hero-video"
               :src="resolveMediaSrc(siteContent.hero.video.src)"
               :poster="resolvePosterSrc(siteContent.hero.video.poster)"
@@ -1801,7 +1882,24 @@ onBeforeUnmount(() => {
               @load="markProgressiveImageLoaded(`ext_${block.key}`)"
             />
           </div>
-          <p v-if="resolvePreviewSrc(block.image.previewUrl)" class="media-action-row media-action-row-image">
+          <div
+            v-if="index === siteContent.sections.extensibility.blocks.length - 1"
+            class="panel-note-row"
+          >
+            <p class="panel-note panel-note-inline">
+              {{ siteContent.sections.extensibility.note }}
+            </p>
+            <p v-if="resolvePreviewSrc(block.image.previewUrl)" class="media-action-row media-action-row-image media-action-row-inline">
+              <button
+                type="button"
+                class="media-download-link media-preview-trigger"
+                @click="openOriginalMediaPreview('image', block.image.previewUrl, block.image.downloadUrl, siteContent.meta.mediaDownloadLabels.image)"
+              >
+                {{ siteContent.meta.mediaDownloadLabels.image }}
+              </button>
+            </p>
+          </div>
+          <p v-else-if="resolvePreviewSrc(block.image.previewUrl)" class="media-action-row media-action-row-image">
             <button
               type="button"
               class="media-download-link media-preview-trigger"
@@ -1809,9 +1907,6 @@ onBeforeUnmount(() => {
             >
               {{ siteContent.meta.mediaDownloadLabels.image }}
             </button>
-          </p>
-          <p v-if="index === siteContent.sections.extensibility.blocks.length - 1" class="panel-note">
-            {{ siteContent.sections.extensibility.note }}
           </p>
         </article>
       </section>
@@ -2413,6 +2508,7 @@ onBeforeUnmount(() => {
 }
 
 .app-root {
+  --header-fixed-height: 82px;
   --surface: #ffffff;
   --surface-soft: #f5f7fa;
   --text-main: #162236;
@@ -2423,14 +2519,16 @@ onBeforeUnmount(() => {
   --brand-soft: rgba(36, 94, 168, 0.14);
   --shadow-soft: 0 12px 30px rgba(18, 42, 77, 0.1);
   --performance-media-width: 100%;
-  --result-video-top-width: 92%;
-  --result-video-bottom-width: 92%;
+  --result-video-top-width: 88%;
+  --result-video-bottom-width: 88%;
+  --content-media-width: var(--result-video-bottom-width);
   --result-video-top-gap: 14px;
   --result-video-top-item-width: 45%;
   --result-video-top-item-aspect-ratio: 16 / 5;
   --result-video-bottom-aspect-ratio: 1714 / 858;
   --result-video-1-scale: 1.1;
-  --hero-video-scale: 1.12;
+  --hero-video-scale: 1.17;
+  --hero-video-object-position-x: 62%;
   min-height: 100vh;
   color: var(--text-main);
 }
@@ -2486,8 +2584,11 @@ onBeforeUnmount(() => {
 }
 
 .page-header {
-  position: sticky;
+  position: fixed;
   top: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
   z-index: 40;
   background: rgba(255, 255, 255, 0.86);
   backdrop-filter: blur(10px);
@@ -2538,7 +2639,7 @@ onBeforeUnmount(() => {
 }
 
 .page-main {
-  padding: 14px 0 52px;
+  padding: calc(var(--header-fixed-height) + 14px) 0 52px;
 }
 
 .first-screen {
@@ -2546,7 +2647,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
-  gap: 12px;
+  gap: 20px;
   padding-bottom: 0;
 }
 
@@ -2576,7 +2677,7 @@ onBeforeUnmount(() => {
 
 .hero-section {
   display: grid;
-  grid-template-columns: minmax(0, 54%) minmax(360px, 46%);
+  grid-template-columns: minmax(0, 52%) minmax(380px, 48%);
   grid-template-rows: auto auto;
   gap: 22px;
   align-items: start;
@@ -2658,12 +2759,12 @@ onBeforeUnmount(() => {
 .hero-video {
   background: transparent;
   object-fit: cover;
-  object-position: center;
+  object-position: var(--hero-video-object-position-x) center;
   position: absolute;
   inset: 0;
   height: 100%;
   transform: scale(var(--hero-video-scale));
-  transform-origin: center center;
+  transform-origin: right center;
 }
 
 .section-video {
@@ -2692,7 +2793,7 @@ onBeforeUnmount(() => {
 }
 
 .performance-image {
-  width: min(calc(100% - 33px), var(--performance-media-width));
+  width: var(--content-media-width);
   margin: 0 auto;
   max-height: none;
 }
@@ -2707,7 +2808,7 @@ onBeforeUnmount(() => {
   align-items: center;
   flex-wrap: nowrap;
   gap: clamp(28px, 4.5vw, 74px);
-  margin: 10px auto;
+  margin: 18px auto 22px;
   padding: 0;
 }
 
@@ -2800,14 +2901,17 @@ onBeforeUnmount(() => {
 
 .panel-title,
 .panel-subtitle,
-.sub-panel-title,
-.dataset-card-title {
+.sub-panel-title {
   margin: 0 0 10px;
   text-align: center;
   font-size: clamp(16px, 1.45vw, 24px);
   line-height: 1.32;
   font-weight: 700;
   color: #22324a;
+  width: var(--content-media-width);
+  max-width: 100%;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .sub-panel-title {
@@ -2822,6 +2926,20 @@ onBeforeUnmount(() => {
   margin: 8px 0 0;
   font-size: 14px;
   color: var(--text-muted);
+}
+
+.panel-note-row {
+  width: var(--content-media-width);
+  max-width: 100%;
+  margin: 2px auto 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.panel-note-inline {
+  margin: 0;
 }
 
 .light-panel {
@@ -3041,6 +3159,15 @@ onBeforeUnmount(() => {
 
 .media-action-row-image {
   margin-top: 2px;
+  width: var(--content-media-width);
+  max-width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.media-action-row-inline {
+  margin: 0;
+  width: auto;
 }
 
 .performance-action-row {
@@ -3084,6 +3211,20 @@ onBeforeUnmount(() => {
   width: 100%;
 }
 
+.panel-card > .progressive-image-wrap {
+  width: var(--content-media-width);
+  max-width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.dataset-card > .progressive-image-wrap {
+  width: var(--content-media-width);
+  max-width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+}
+
 .progressive-image-placeholder {
   position: relative;
   z-index: 1;
@@ -3120,7 +3261,7 @@ onBeforeUnmount(() => {
 
 .ext-large-image {
   max-height: none;
-  width: 100%;
+  width: var(--content-media-width);
   min-height: 260px;
 }
 
@@ -3863,12 +4004,15 @@ onBeforeUnmount(() => {
 
 @media (max-width: 980px) {
   .app-root {
+    --header-fixed-height: 68px;
     --performance-media-width: 100%;
     --result-video-top-width: 100%;
     --result-video-bottom-width: 100%;
+    --content-media-width: 100%;
     --result-video-top-item-width: 100%;
     --result-video-1-scale: 1.02;
     --hero-video-scale: 1.04;
+    --hero-video-object-position-x: 56%;
   }
 
   .header-inner {
@@ -3897,7 +4041,7 @@ onBeforeUnmount(() => {
 
   .first-screen {
     min-height: auto;
-    gap: 14px;
+    gap: 16px;
   }
 
   .hero-media-wrap {
@@ -3912,7 +4056,7 @@ onBeforeUnmount(() => {
   .nav-section {
     justify-content: center;
     flex-wrap: wrap;
-    margin: 8px auto 12px;
+    margin: 12px auto 16px;
   }
 
   .nav-section .pill-btn {
@@ -3981,6 +4125,10 @@ onBeforeUnmount(() => {
     z-index: auto;
   }
 
+  .panel-note-row {
+    width: 100%;
+  }
+
   .video-grid-top {
     flex-direction: column;
   }
@@ -4041,7 +4189,7 @@ onBeforeUnmount(() => {
   }
 
   .page-main {
-    padding-top: 12px;
+    padding-top: calc(var(--header-fixed-height) + 12px);
   }
 
   .nav-section {
