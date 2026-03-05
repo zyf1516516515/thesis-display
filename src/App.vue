@@ -145,7 +145,8 @@ function syncHeroMediaHeight() {
     heroMediaHeightPx.value = 0
     return
   }
-  const measured = Math.round(bulletListEl.getBoundingClientRect().height)
+  // Use intrinsic content height to avoid feedback loops caused by grid stretch.
+  const measured = Math.ceil(bulletListEl.scrollHeight || bulletListEl.getBoundingClientRect().height || 0)
   heroMediaHeightPx.value = measured > 0 ? measured : 0
 }
 
@@ -2597,7 +2598,7 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: clamp(12px, 1.36vw, 20px);
   justify-content: flex-start;
-  align-self: stretch;
+  align-self: start;
 }
 
 .arrow-group {
