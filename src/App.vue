@@ -167,7 +167,8 @@ function syncDatasetMetaAlignment() {
   const paragraphRect = paragraphEl.getBoundingClientRect()
   const buttonRect = buttonRowEl.getBoundingClientRect()
   const delta = Math.round(paragraphRect.bottom - buttonRect.bottom)
-  datasetMetaShiftYPx.value = clampNumber(delta, -120, 120)
+  // Only allow downward compensation to prevent the image area from covering labels/buttons.
+  datasetMetaShiftYPx.value = clampNumber(delta, 0, 280)
 }
 
 function syncHeroAndDatasetLayout() {
@@ -2429,6 +2430,7 @@ onBeforeUnmount(() => {
   --result-video-top-item-aspect-ratio: 16 / 5;
   --result-video-bottom-aspect-ratio: 1714 / 858;
   --result-video-1-scale: 1.1;
+  --hero-video-scale: 1.12;
   min-height: 100vh;
   color: var(--text-main);
 }
@@ -2540,12 +2542,12 @@ onBeforeUnmount(() => {
 }
 
 .first-screen {
-  min-height: clamp(540px, calc(100vh - 210px), 740px);
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  gap: 6px;
-  padding-bottom: 2px;
+  justify-content: flex-start;
+  gap: 12px;
+  padding-bottom: 0;
 }
 
 .content-mid-backdrop {
@@ -2574,7 +2576,7 @@ onBeforeUnmount(() => {
 
 .hero-section {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 39%);
+  grid-template-columns: minmax(0, 54%) minmax(360px, 46%);
   grid-template-rows: auto auto;
   gap: 22px;
   align-items: start;
@@ -2596,7 +2598,7 @@ onBeforeUnmount(() => {
   grid-row: 2;
   display: flex;
   flex-direction: column;
-  gap: clamp(12px, 1.36vw, 20px);
+  gap: clamp(14px, 1.55vw, 22px);
   justify-content: flex-start;
   align-self: start;
 }
@@ -2624,7 +2626,7 @@ onBeforeUnmount(() => {
 .line-text {
   margin: 0;
   font-size: clamp(16px, 1.26vw, 19px);
-  line-height: 1.68;
+  line-height: 1.76;
   color: #27364e;
   text-align: justify;
   text-justify: inter-word;
@@ -2660,6 +2662,8 @@ onBeforeUnmount(() => {
   position: absolute;
   inset: 0;
   height: 100%;
+  transform: scale(var(--hero-video-scale));
+  transform-origin: center center;
 }
 
 .section-video {
@@ -2688,7 +2692,7 @@ onBeforeUnmount(() => {
 }
 
 .performance-image {
-  width: var(--performance-media-width);
+  width: min(calc(100% - 33px), var(--performance-media-width));
   margin: 0 auto;
   max-height: none;
 }
@@ -2703,7 +2707,7 @@ onBeforeUnmount(() => {
   align-items: center;
   flex-wrap: nowrap;
   gap: clamp(28px, 4.5vw, 74px);
-  margin: 6px auto 0;
+  margin: 10px auto;
   padding: 0;
 }
 
@@ -2922,6 +2926,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+  gap: 8px;
   background: transparent;
   border: 0;
   border-radius: 0;
@@ -2940,7 +2945,7 @@ onBeforeUnmount(() => {
 }
 
 .dataset-image .media-image {
-  max-height: 228px;
+  max-height: 212px;
 }
 
 .dataset-label-row {
@@ -2952,14 +2957,18 @@ onBeforeUnmount(() => {
   font-size: clamp(12px, 0.95vw, 16px);
   text-align: center;
   transform: translate(var(--dataset-meta-shift-x), var(--dataset-meta-shift-y));
+  position: relative;
+  z-index: 3;
 }
 
 .dataset-btn-row {
-  margin-top: 8px;
+  margin-top: 6px;
   display: grid;
   grid-template-columns: minmax(0, var(--dataset-main-left-col)) minmax(0, var(--dataset-main-right-col));
   column-gap: clamp(8px, 1.1vw, 14px);
   transform: translate(var(--dataset-meta-shift-x), var(--dataset-meta-shift-y));
+  position: relative;
+  z-index: 3;
 }
 
 .dataset-label-row span,
@@ -3859,6 +3868,7 @@ onBeforeUnmount(() => {
     --result-video-bottom-width: 100%;
     --result-video-top-item-width: 100%;
     --result-video-1-scale: 1.02;
+    --hero-video-scale: 1.04;
   }
 
   .header-inner {
@@ -3887,6 +3897,7 @@ onBeforeUnmount(() => {
 
   .first-screen {
     min-height: auto;
+    gap: 14px;
   }
 
   .hero-media-wrap {
@@ -3901,7 +3912,7 @@ onBeforeUnmount(() => {
   .nav-section {
     justify-content: center;
     flex-wrap: wrap;
-    margin-top: 16px;
+    margin: 8px auto 12px;
   }
 
   .nav-section .pill-btn {
@@ -3967,6 +3978,7 @@ onBeforeUnmount(() => {
   .dataset-label-row,
   .dataset-btn-row {
     transform: none;
+    z-index: auto;
   }
 
   .video-grid-top {
