@@ -1,14 +1,15 @@
 const DEFAULT_PREVIEW_BASE_URL = 'https://thesis-display-oss-bucket.sylg.chat'
 const DEFAULT_DOWNLOAD_BASE_URL = 'https://thesis-display-bucket.oss-ap-southeast-1.aliyuncs.com'
+const DEFAULT_PLACEHOLDER_BASE_URL = 'https://thesis-display-oss-bucket.sylg.chat'
 
 const PREVIEW_BASE_URL = normalizeBaseUrl(import.meta.env.VITE_OSS_PREVIEW_BASE_URL || DEFAULT_PREVIEW_BASE_URL)
 const DOWNLOAD_BASE_URL = normalizeBaseUrl(import.meta.env.VITE_OSS_DOWNLOAD_BASE_URL || DEFAULT_DOWNLOAD_BASE_URL)
+const PLACEHOLDER_BASE_URL = normalizeBaseUrl(import.meta.env.VITE_OSS_PLACEHOLDER_BASE_URL || DEFAULT_PLACEHOLDER_BASE_URL)
 
 const PREVIEW_PREFIX = normalizePrefix(import.meta.env.VITE_OSS_PREVIEW_PREFIX || 'public_min')
 const ORIGINAL_PREFIX = normalizePrefix(import.meta.env.VITE_OSS_ORIGINAL_PREFIX || 'public')
 const DOWNLOAD_PREFIX = normalizePrefix(import.meta.env.VITE_OSS_DOWNLOAD_PREFIX || ORIGINAL_PREFIX)
-
-const SVG_PLACEHOLDER_PREFIX = 'src/svg_resource'
+const PLACEHOLDER_PREFIX = normalizePrefix(import.meta.env.VITE_OSS_PLACEHOLDER_PREFIX || 'svg_olaceholder')
 
 function normalizeBaseUrl(baseUrl) {
   return String(baseUrl || '').replace(/\/+$/, '')
@@ -39,7 +40,7 @@ function buildSvgPlaceholder(fileName) {
   if (!fileName) {
     return ''
   }
-  return `${SVG_PLACEHOLDER_PREFIX}/${fileName}`
+  return buildOssAsset(PLACEHOLDER_BASE_URL, PLACEHOLDER_PREFIX, fileName)
 }
 
 function createImageAsset(previewPath, originalPath = previewPath, placeholderFileName = '', previewVersion = '') {

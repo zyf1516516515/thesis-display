@@ -5,10 +5,6 @@ const MEDIA_MODULES = {
     eager: true,
     import: 'default',
   }),
-  ...import.meta.glob('../svg_resource/**/*.{svg,SVG}', {
-    eager: true,
-    import: 'default',
-  }),
 }
 
 const BASE_URL = normalizeBaseUrl(import.meta.env.BASE_URL || '/')
@@ -51,12 +47,7 @@ export function resolveMediaSrc(src, sourceMap = MEDIA_SOURCE_MAP, baseUrl = BAS
     return fromMapWithoutSlash
   }
 
-  if (
-    normalizedSrc.startsWith('src/resources/') ||
-    normalizedSrc.startsWith('/src/resources/') ||
-    normalizedSrc.startsWith('src/svg_resource/') ||
-    normalizedSrc.startsWith('/src/svg_resource/')
-  ) {
+  if (normalizedSrc.startsWith('src/resources/') || normalizedSrc.startsWith('/src/resources/')) {
     return ''
   }
 
