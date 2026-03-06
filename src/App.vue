@@ -1601,7 +1601,7 @@ onBeforeUnmount(() => {
           <h2 class="focus-title">{{ siteContent.hero.title }}</h2>
           <div ref="heroBulletListRef" class="hero-bullet-list">
             <div class="arrow-group" v-for="(bullet, index) in siteContent.hero.bullets" :key="`hero-bullet-${index}`">
-              <div class="arrow-icon">◆</div>
+              <div class="arrow-icon">▸</div>
               <div class="arrow-lines">
                 <p v-for="(line, lineIndex) in bullet" :key="`hero-bullet-line-${index}-${lineIndex}`" class="line-text">
                   {{ line }}
@@ -1610,32 +1610,38 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
-          <div ref="heroMediaWrapRef" class="hero-media-wrap" :style="heroMediaWrapStyle">
-            <video
-              v-if="resolveMediaSrc(siteContent.hero.video.src)"
-              ref="heroVideoRef"
-              class="hero-video"
-              :src="resolveMediaSrc(siteContent.hero.video.src)"
-              :poster="resolvePosterSrc(siteContent.hero.video.poster)"
-              :autoplay="getVideoMode(siteContent.hero.video.slot).autoplay"
-              :controls="getVideoMode(siteContent.hero.video.slot).controls"
-              :loop="getVideoMode(siteContent.hero.video.slot).loop"
-              :muted="getVideoMode(siteContent.hero.video.slot).muted"
-              playsinline
-              preload="auto"
-              @loadeddata="handleHeroVideoReady"
-              @canplay="handleHeroVideoReady"
-              @canplaythrough="handleHeroVideoReady"
-              @error="handleHeroVideoError"
-            />
-            <button
+          <div class="hero-media-card">
+            <div ref="heroMediaWrapRef" class="hero-media-wrap" :style="heroMediaWrapStyle">
+              <video
+                v-if="resolveMediaSrc(siteContent.hero.video.src)"
+                ref="heroVideoRef"
+                class="hero-video"
+                :src="resolveMediaSrc(siteContent.hero.video.src)"
+                :poster="resolvePosterSrc(siteContent.hero.video.poster)"
+                :autoplay="getVideoMode(siteContent.hero.video.slot).autoplay"
+                :controls="getVideoMode(siteContent.hero.video.slot).controls"
+                :loop="getVideoMode(siteContent.hero.video.slot).loop"
+                :muted="getVideoMode(siteContent.hero.video.slot).muted"
+                playsinline
+                preload="auto"
+                @loadeddata="handleHeroVideoReady"
+                @canplay="handleHeroVideoReady"
+                @canplaythrough="handleHeroVideoReady"
+                @error="handleHeroVideoError"
+              />
+            </div>
+            <p
               v-if="resolvePreviewSrc(siteContent.hero.video.previewUrl) && resolveDownloadSrc(siteContent.hero.video.downloadUrl)"
-              type="button"
-              class="media-download-link media-download-overlay media-preview-trigger"
-              @click="openOriginalMediaPreview('video', siteContent.hero.video.previewUrl, siteContent.hero.video.downloadUrl, siteContent.meta.mediaDownloadLabels.video)"
+              class="media-action-row media-action-row-video hero-video-action-row"
             >
-              {{ siteContent.meta.mediaDownloadLabels.video }}
-            </button>
+              <button
+                type="button"
+                class="media-download-link media-preview-trigger"
+                @click="openOriginalMediaPreview('video', siteContent.hero.video.previewUrl, siteContent.hero.video.downloadUrl, siteContent.meta.mediaDownloadLabels.video)"
+              >
+                {{ siteContent.meta.mediaDownloadLabels.video }}
+              </button>
+            </p>
           </div>
         </section>
 
@@ -1700,58 +1706,67 @@ onBeforeUnmount(() => {
             :key="video.key"
             :class="['video-card', `video-card-${video.key}`]"
           >
-            <video
-              :class="[
-                'section-video',
-                {
-                  'result-video-1-zoom': video.key === 'result_video_1',
-                  'is-click-to-load': !isPreviewVideoActivated(video.key),
-                },
-              ]"
-              :src="getManualVideoSrc(video.key, video.src)"
-              :poster="resolvePosterSrc(video.poster)"
-              :autoplay="false"
-              :controls="isPreviewVideoActivated(video.key) ? getVideoMode(video.slot).controls : false"
-              :loop="false"
-              :muted="false"
-              :title="!isPreviewVideoActivated(video.key) ? 'Click to load preview video' : ''"
-              playsinline
-              preload="none"
-              @click="handlePreviewVideoClick(video.key, $event)"
-            />
-            <button
-              v-if="resolvePreviewSrc(video.previewUrl) && resolveDownloadSrc(video.downloadUrl)"
-              type="button"
-              class="media-download-link media-download-overlay media-preview-trigger"
-              @click="openOriginalMediaPreview('video', video.previewUrl, video.downloadUrl, siteContent.meta.mediaDownloadLabels.video)"
-            >
-              {{ siteContent.meta.mediaDownloadLabels.video }}
-            </button>
+            <div class="video-media-frame">
+              <video
+                :class="[
+                  'section-video',
+                  {
+                    'result-video-1-zoom': video.key === 'result_video_1',
+                    'is-click-to-load': !isPreviewVideoActivated(video.key),
+                  },
+                ]"
+                :src="getManualVideoSrc(video.key, video.src)"
+                :poster="resolvePosterSrc(video.poster)"
+                :autoplay="false"
+                :controls="isPreviewVideoActivated(video.key) ? getVideoMode(video.slot).controls : false"
+                :loop="false"
+                :muted="false"
+                :title="!isPreviewVideoActivated(video.key) ? 'Click to load preview video' : ''"
+                playsinline
+                preload="none"
+                @click="handlePreviewVideoClick(video.key, $event)"
+              />
+            </div>
+            <p v-if="resolvePreviewSrc(video.previewUrl) && resolveDownloadSrc(video.downloadUrl)" class="media-action-row media-action-row-video result-video-action-row">
+              <button
+                type="button"
+                class="media-download-link media-preview-trigger"
+                @click="openOriginalMediaPreview('video', video.previewUrl, video.downloadUrl, siteContent.meta.mediaDownloadLabels.video)"
+              >
+                {{ siteContent.meta.mediaDownloadLabels.video }}
+              </button>
+            </p>
           </article>
         </div>
 
         <article class="video-card video-card-wide video-card-result_video_3">
-          <video
-            :class="['section-video', { 'is-click-to-load': !isPreviewVideoActivated('result_video_3') }]"
-            :src="getManualVideoSrc('result_video_3', siteContent.sections.resultVideo.videos[2].src)"
-            :poster="resolvePosterSrc(siteContent.sections.resultVideo.videos[2].poster)"
-            :autoplay="false"
-            :controls="isPreviewVideoActivated('result_video_3') ? getVideoMode(siteContent.sections.resultVideo.videos[2].slot).controls : false"
-            :loop="false"
-            :muted="false"
-            :title="!isPreviewVideoActivated('result_video_3') ? 'Click to load preview video' : ''"
-            playsinline
-            preload="none"
-            @click="handlePreviewVideoClick('result_video_3', $event)"
-          />
-          <button
+          <div class="video-media-frame">
+            <video
+              :class="['section-video', { 'is-click-to-load': !isPreviewVideoActivated('result_video_3') }]"
+              :src="getManualVideoSrc('result_video_3', siteContent.sections.resultVideo.videos[2].src)"
+              :poster="resolvePosterSrc(siteContent.sections.resultVideo.videos[2].poster)"
+              :autoplay="false"
+              :controls="isPreviewVideoActivated('result_video_3') ? getVideoMode(siteContent.sections.resultVideo.videos[2].slot).controls : false"
+              :loop="false"
+              :muted="false"
+              :title="!isPreviewVideoActivated('result_video_3') ? 'Click to load preview video' : ''"
+              playsinline
+              preload="none"
+              @click="handlePreviewVideoClick('result_video_3', $event)"
+            />
+          </div>
+          <p
             v-if="resolvePreviewSrc(siteContent.sections.resultVideo.videos[2].previewUrl) && resolveDownloadSrc(siteContent.sections.resultVideo.videos[2].downloadUrl)"
-            type="button"
-            class="media-download-link media-download-overlay media-preview-trigger"
-            @click="openOriginalMediaPreview('video', siteContent.sections.resultVideo.videos[2].previewUrl, siteContent.sections.resultVideo.videos[2].downloadUrl, siteContent.meta.mediaDownloadLabels.video)"
+            class="media-action-row media-action-row-video result-video-action-row"
           >
-            {{ siteContent.meta.mediaDownloadLabels.video }}
-          </button>
+            <button
+              type="button"
+              class="media-download-link media-preview-trigger"
+              @click="openOriginalMediaPreview('video', siteContent.sections.resultVideo.videos[2].previewUrl, siteContent.sections.resultVideo.videos[2].downloadUrl, siteContent.meta.mediaDownloadLabels.video)"
+            >
+              {{ siteContent.meta.mediaDownloadLabels.video }}
+            </button>
+          </p>
         </article>
       </section>
 
@@ -1901,32 +1916,38 @@ onBeforeUnmount(() => {
         <div class="tutorial-layout">
           <div class="tutorial-list text-rect">
             <div v-for="(item, index) in siteContent.sections.tutorial.bullets" :key="`tutorial-${index}`" class="tutorial-item">
-              <span class="tutorial-marker">◆</span>
+              <span class="tutorial-marker">▸</span>
               <p>{{ item }}</p>
             </div>
           </div>
           <div class="tutorial-media">
-            <video
-              :class="['section-video', 'tutorial-video', { 'is-click-to-load': !isPreviewVideoActivated('tutorial_video') }]"
-              :src="getManualVideoSrc('tutorial_video', siteContent.sections.tutorial.video.src)"
-              :poster="resolvePosterSrc(siteContent.sections.tutorial.video.poster)"
-              :autoplay="false"
-              :controls="isPreviewVideoActivated('tutorial_video') ? getVideoMode(siteContent.sections.tutorial.video.slot).controls : false"
-              :loop="false"
-              :muted="false"
-              :title="!isPreviewVideoActivated('tutorial_video') ? 'Click to load preview video' : ''"
-              playsinline
-              preload="none"
-              @click="handlePreviewVideoClick('tutorial_video', $event)"
-            />
-            <button
+            <div class="video-media-frame tutorial-media-frame">
+              <video
+                :class="['section-video', 'tutorial-video', { 'is-click-to-load': !isPreviewVideoActivated('tutorial_video') }]"
+                :src="getManualVideoSrc('tutorial_video', siteContent.sections.tutorial.video.src)"
+                :poster="resolvePosterSrc(siteContent.sections.tutorial.video.poster)"
+                :autoplay="false"
+                :controls="isPreviewVideoActivated('tutorial_video') ? getVideoMode(siteContent.sections.tutorial.video.slot).controls : false"
+                :loop="false"
+                :muted="false"
+                :title="!isPreviewVideoActivated('tutorial_video') ? 'Click to load preview video' : ''"
+                playsinline
+                preload="none"
+                @click="handlePreviewVideoClick('tutorial_video', $event)"
+              />
+            </div>
+            <p
               v-if="resolvePreviewSrc(siteContent.sections.tutorial.video.previewUrl) && resolveDownloadSrc(siteContent.sections.tutorial.video.downloadUrl)"
-              type="button"
-              class="media-download-link media-download-overlay media-preview-trigger"
-              @click="openOriginalMediaPreview('video', siteContent.sections.tutorial.video.previewUrl, siteContent.sections.tutorial.video.downloadUrl, siteContent.meta.mediaDownloadLabels.video)"
+              class="media-action-row media-action-row-video tutorial-video-action-row"
             >
-              {{ siteContent.meta.mediaDownloadLabels.video }}
-            </button>
+              <button
+                type="button"
+                class="media-download-link media-preview-trigger"
+                @click="openOriginalMediaPreview('video', siteContent.sections.tutorial.video.previewUrl, siteContent.sections.tutorial.video.downloadUrl, siteContent.meta.mediaDownloadLabels.video)"
+              >
+                {{ siteContent.meta.mediaDownloadLabels.video }}
+              </button>
+            </p>
           </div>
         </div>
       </section>
@@ -2665,10 +2686,10 @@ onBeforeUnmount(() => {
 
 .arrow-icon {
   color: var(--brand-strong);
-  font-size: 24px;
+  font-size: 22px;
   line-height: 1;
-  margin-top: 0;
-  font-weight: 900;
+  margin-top: 2px;
+  font-weight: 800;
 }
 
 .arrow-lines {
@@ -2689,9 +2710,16 @@ onBeforeUnmount(() => {
   letter-spacing: 0.003em;
 }
 
-.hero-media-wrap {
+.hero-media-card {
   grid-column: 2;
   grid-row: 2;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+}
+
+.hero-media-wrap {
   position: relative;
   margin-top: 0;
   width: 100%;
@@ -2912,10 +2940,12 @@ onBeforeUnmount(() => {
 .video-card {
   position: relative;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .video-card-wide {
-  margin-top: 14px;
+  margin-top: clamp(24px, 2.4vw, 34px);
   width: var(--result-video-bottom-width);
   margin-left: auto;
   margin-right: auto;
@@ -2923,16 +2953,28 @@ onBeforeUnmount(() => {
 
 .video-card-result_video_1 {
   flex: 0 0 var(--result-video-top-item-width);
-  aspect-ratio: var(--result-video-top-item-aspect-ratio);
-  overflow: hidden;
 }
 
 .video-card-result_video_2 {
   flex: 0 0 var(--result-video-top-item-width);
+}
+
+.video-media-frame {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  border: 0 !important;
+  outline: none !important;
+  box-shadow: none !important;
+  background: transparent;
+}
+
+.video-card-result_video_1 .video-media-frame,
+.video-card-result_video_2 .video-media-frame {
   aspect-ratio: var(--result-video-top-item-aspect-ratio);
 }
 
-.video-card-result_video_3 {
+.video-card-result_video_3 .video-media-frame {
   aspect-ratio: var(--result-video-bottom-aspect-ratio);
 }
 
@@ -2940,6 +2982,21 @@ onBeforeUnmount(() => {
 .video-card-wide .section-video {
   height: 100%;
   min-height: 0;
+  border: 0 !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.video-card .section-video:focus,
+.video-card .section-video:focus-visible,
+.video-card-wide .section-video:focus,
+.video-card-wide .section-video:focus-visible,
+.tutorial-video:focus,
+.tutorial-video:focus-visible,
+.hero-video:focus,
+.hero-video:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
 }
 
 .result-video-1-zoom {
@@ -3095,17 +3152,22 @@ onBeforeUnmount(() => {
 
 .tutorial-marker {
   color: var(--brand-strong);
-  font-size: 22px;
+  font-size: 21px;
   line-height: 1;
-  font-weight: 900;
+  font-weight: 800;
   transform: translateY(0);
 }
 
 .tutorial-media {
   position: relative;
-  aspect-ratio: 1750 / 932;
   width: 88%;
   margin-left: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.tutorial-media-frame {
+  aspect-ratio: 1750 / 932;
 }
 
 .tutorial-media .tutorial-video {
@@ -3128,6 +3190,11 @@ onBeforeUnmount(() => {
   justify-content: flex-end;
 }
 
+.media-action-row-video {
+  margin-top: 8px;
+  width: 100%;
+}
+
 .media-action-row-image {
   margin-top: 2px;
   width: var(--content-media-width);
@@ -3145,6 +3212,12 @@ onBeforeUnmount(() => {
   margin-top: clamp(4px, 0.7vw, 10px);
   position: relative;
   z-index: 3;
+}
+
+.hero-video-action-row,
+.result-video-action-row,
+.tutorial-video-action-row {
+  margin-top: 8px;
 }
 
 .media-download-link {
@@ -4040,12 +4113,15 @@ onBeforeUnmount(() => {
   }
 
   .hero-media-wrap {
-    grid-column: 1;
-    grid-row: 3;
     margin-top: 0;
     height: auto !important;
     min-height: 0;
     aspect-ratio: 16 / 9;
+  }
+
+  .hero-media-card {
+    grid-column: 1;
+    grid-row: 3;
   }
 
   .nav-section {
