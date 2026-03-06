@@ -1863,7 +1863,7 @@ onBeforeUnmount(() => {
             :class="[
               'progressive-image-wrap',
               { 'ext-large-image': ['ext_3', 'ext_4', 'ext_5', 'ext_6'].includes(block.key) },
-              { 'ext-underwater-crop-right': block.key === 'ext_4' },
+              { 'ext-underwater-expand-right': block.key === 'ext_4' },
               { 'is-loaded': isProgressiveImageLoaded(`ext_${block.key}`) },
             ]"
           >
@@ -3414,14 +3414,11 @@ onBeforeUnmount(() => {
   max-height: none;
 }
 
-/* Hide the fixed right white edge only for Underwater drone without mutating source assets. */
-.ext-underwater-crop-right {
-  overflow: hidden;
-}
-
-.ext-underwater-crop-right .media-image {
-  width: calc(100% + 18px);
+/* Keep Underwater drone left edge fixed, extend visual width to the right by 20px. */
+.ext-underwater-expand-right .media-image {
+  width: calc(100% + 20px);
   max-width: none;
+  height: auto;
 }
 
 .original-media-overlay {
