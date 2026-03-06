@@ -3395,9 +3395,9 @@ onBeforeUnmount(() => {
 }
 
 .balanced-text-section .section-title {
-  margin-left: 33px;
-  margin-right: 33px;
-  width: calc(100% - 66px);
+  margin-left: 0;
+  margin-right: 0;
+  width: 100%;
 }
 
 .section-cta-wide {
