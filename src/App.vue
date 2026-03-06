@@ -1601,7 +1601,7 @@ onBeforeUnmount(() => {
           <h2 class="focus-title">{{ siteContent.hero.title }}</h2>
           <div ref="heroBulletListRef" class="hero-bullet-list">
             <div class="arrow-group" v-for="(bullet, index) in siteContent.hero.bullets" :key="`hero-bullet-${index}`">
-              <div class="arrow-icon">➢</div>
+              <div class="arrow-icon">◆</div>
               <div class="arrow-lines">
                 <p v-for="(line, lineIndex) in bullet" :key="`hero-bullet-line-${index}-${lineIndex}`" class="line-text">
                   {{ line }}
@@ -1901,7 +1901,7 @@ onBeforeUnmount(() => {
         <div class="tutorial-layout">
           <div class="tutorial-list text-rect">
             <div v-for="(item, index) in siteContent.sections.tutorial.bullets" :key="`tutorial-${index}`" class="tutorial-item">
-              <span class="tutorial-marker">➢</span>
+              <span class="tutorial-marker">◆</span>
               <p>{{ item }}</p>
             </div>
           </div>
@@ -2665,9 +2665,9 @@ onBeforeUnmount(() => {
 
 .arrow-icon {
   color: var(--brand-strong);
-  font-size: 20px;
-  line-height: 1.15;
-  margin-top: 1px;
+  font-size: 24px;
+  line-height: 1;
+  margin-top: 0;
   font-weight: 900;
 }
 
@@ -2681,7 +2681,7 @@ onBeforeUnmount(() => {
   margin: 0;
   font-size: clamp(16px, 1.26vw, 19px);
   line-height: 1.76;
-  color: #27364e;
+  color: #000000;
   text-align: justify;
   text-justify: inter-word;
   hyphens: auto;
@@ -2983,7 +2983,7 @@ onBeforeUnmount(() => {
   margin: 0;
   font-size: clamp(14px, 0.96vw, 17px);
   line-height: 1.72;
-  color: #2a3a52;
+  color: #000000;
   text-align: justify;
   text-justify: inter-word;
   hyphens: auto;
@@ -3095,10 +3095,10 @@ onBeforeUnmount(() => {
 
 .tutorial-marker {
   color: var(--brand-strong);
-  font-size: 18px;
-  line-height: 1.2;
+  font-size: 22px;
+  line-height: 1;
   font-weight: 900;
-  transform: translateY(1px);
+  transform: translateY(0);
 }
 
 .tutorial-media {
@@ -3169,14 +3169,19 @@ onBeforeUnmount(() => {
 
 .media-download-overlay {
   position: absolute;
-  right: 8px;
+  right: 10px;
   bottom: 8px;
   z-index: 2;
-  padding: 4px 8px;
-  border-radius: 999px;
-  border: 1px solid rgba(95, 130, 188, 0.45);
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 4px 12px rgba(28, 47, 79, 0.14);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.media-download-overlay.media-download-link {
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .progressive-image-wrap {

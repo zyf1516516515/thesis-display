@@ -113,7 +113,7 @@ export const siteContent = {
       lines: ['The dataset includes raw images and corresponding behavioral annotations. We constructed a visual annotation system based on the behavioral space. Annotators optimize image quality through manual rule-based decisions and parameter adjustments while observing real-time effects, thereby capturing the behavioral trajectory annotations for each images transformation from its original state to its optimal state'],
       cardTitle: '2.4MB Enhancement behavior dataset',
       image: {
-        src: mediaAssets.dataset.previewImage.previewUrl,
+        src: mediaAssets.dataset.previewImage.originalPreviewUrl,
         previewUrl: mediaAssets.dataset.previewImage.originalPreviewUrl,
         downloadUrl: mediaAssets.dataset.previewImage.downloadUrl,
         placeholderSrc: mediaAssets.dataset.previewImage.placeholderUrl,
