@@ -1863,6 +1863,7 @@ onBeforeUnmount(() => {
             :class="[
               'progressive-image-wrap',
               { 'ext-large-image': ['ext_3', 'ext_4', 'ext_5', 'ext_6'].includes(block.key) },
+              { 'ext-underwater-crop-right': block.key === 'ext_4' },
               { 'is-loaded': isProgressiveImageLoaded(`ext_${block.key}`) },
             ]"
           >
@@ -1870,13 +1871,20 @@ onBeforeUnmount(() => {
               v-if="!isProgressiveImageLoaded(`ext_${block.key}`)"
               :src="resolveMediaSrc(block.image.placeholderSrc)"
               :alt="`${block.image.alt} placeholder`"
-              class="media-image progressive-image-placeholder"
+              :class="[
+                'media-image',
+                'progressive-image-placeholder',
+              ]"
             />
             <img
               v-if="resolveMediaSrc(block.image.src)"
               :src="resolveMediaSrc(block.image.src)"
               :alt="block.image.alt"
-              :class="['media-image', 'progressive-image-final', { 'is-loaded': isProgressiveImageLoaded(`ext_${block.key}`) }]"
+              :class="[
+                'media-image',
+                'progressive-image-final',
+                { 'is-loaded': isProgressiveImageLoaded(`ext_${block.key}`) },
+              ]"
               @load="markProgressiveImageLoaded(`ext_${block.key}`)"
             />
           </div>
@@ -3331,6 +3339,14 @@ onBeforeUnmount(() => {
   margin-right: auto;
 }
 
+/* Keep all large images at the same width as the Integrated circuit baseline. */
+.panel-card > .progressive-image-wrap .media-image {
+  width: 100%;
+  height: auto;
+  max-height: none;
+  object-fit: contain;
+}
+
 .dataset-card > .progressive-image-wrap {
   max-width: 100%;
   margin-left: auto;
@@ -3391,11 +3407,21 @@ onBeforeUnmount(() => {
 .ext-large-image {
   max-height: none;
   width: var(--content-media-width);
-  min-height: 260px;
+  min-height: 0;
 }
 
 .ext-large-image .media-image {
-  max-height: 620px;
+  max-height: none;
+}
+
+/* Hide the fixed right white edge only for Underwater drone without mutating source assets. */
+.ext-underwater-crop-right {
+  overflow: hidden;
+}
+
+.ext-underwater-crop-right .media-image {
+  width: calc(100% + 18px);
+  max-width: none;
 }
 
 .original-media-overlay {
