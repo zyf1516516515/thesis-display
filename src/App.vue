@@ -36,6 +36,9 @@ const DOWNLOAD_FETCH_TIMEOUT_MS = 45000
 const CHECK_CACHE_TTL_MS = 5 * 60 * 1000
 const MAX_COVER_IMAGE_BYTES = 5 * 1024 * 1024
 const MAX_COVER_DATA_URL_LENGTH = Math.ceil((MAX_COVER_IMAGE_BYTES * 4) / 3) + 2048
+const HERO_MEDIA_VISUAL_ALIGN_OFFSET_PX = 0
+const HERO_BULLET_VERTICAL_GAP_PX = 20
+const HERO_BULLET_FRAME_SHRINK_PX = 5
 const ANONYMOUS_OSS_BLOCKED_RESPONSE_OVERRIDE_PARAMS = new Set([
   'response-content-type',
   'response-content-language',
@@ -117,7 +120,11 @@ const heroVideoGateVisible = ref(Boolean(siteContent.hero?.video?.src))
 const heroBulletListRef = ref(null)
 const heroMediaWrapRef = ref(null)
 const heroVideoRef = ref(null)
+const heroBulletListHeightPx = ref(0)
 const heroMediaHeightPx = ref(0)
+const heroBulletListStyle = computed(() =>
+  heroBulletListHeightPx.value > 0 ? { height: `${heroBulletListHeightPx.value}px` } : {},
+)
 const heroMediaWrapStyle = computed(() =>
   heroMediaHeightPx.value > 0 ? { height: `${heroMediaHeightPx.value}px` } : {},
 )
@@ -133,12 +140,32 @@ let heroResizeObserver = null
 function syncHeroMediaHeight() {
   const bulletListEl = heroBulletListRef.value
   if (!bulletListEl) {
+    heroBulletListHeightPx.value = 0
     heroMediaHeightPx.value = 0
     return
   }
-  // Use intrinsic content height to avoid feedback loops caused by grid stretch.
-  const measured = Math.ceil(bulletListEl.scrollHeight || bulletListEl.getBoundingClientRect().height || 0)
-  heroMediaHeightPx.value = measured > 0 ? measured : 0
+  if (typeof window !== 'undefined' && window.innerWidth <= 980) {
+    heroBulletListHeightPx.value = 0
+    heroMediaHeightPx.value = 0
+    return
+  }
+  const groups = Array.from(bulletListEl.querySelectorAll('.arrow-group'))
+  if (!groups.length) {
+    heroBulletListHeightPx.value = 0
+    heroMediaHeightPx.value = 0
+    return
+  }
+  const contentHeight = groups.reduce((sum, element) => sum + Math.ceil(element.getBoundingClientRect().height || 0), 0)
+  const spacingHeight = HERO_BULLET_VERTICAL_GAP_PX * Math.max(groups.length - 1, 0)
+  const mediaTargetHeight = Math.ceil(contentHeight + spacingHeight)
+  if (mediaTargetHeight <= 0) {
+    heroBulletListHeightPx.value = 0
+    heroMediaHeightPx.value = 0
+    return
+  }
+  const bulletTargetHeight = Math.max(contentHeight, mediaTargetHeight - HERO_BULLET_FRAME_SHRINK_PX)
+  heroBulletListHeightPx.value = bulletTargetHeight
+  heroMediaHeightPx.value = Math.max(mediaTargetHeight - HERO_MEDIA_VISUAL_ALIGN_OFFSET_PX, 0)
 }
 
 function syncHeroAndDatasetLayout() {
@@ -1599,9 +1626,13 @@ onBeforeUnmount(() => {
       <div class="first-screen">
         <section class="shell hero-section">
           <h2 class="focus-title">{{ siteContent.hero.title }}</h2>
-          <div ref="heroBulletListRef" class="hero-bullet-list">
+          <div ref="heroBulletListRef" class="hero-bullet-list" :style="heroBulletListStyle">
             <div class="arrow-group" v-for="(bullet, index) in siteContent.hero.bullets" :key="`hero-bullet-${index}`">
-              <div class="arrow-icon">▸</div>
+              <span class="arrow-icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="#8EAADC" width="18" height="18">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                </svg>
+              </span>
               <div class="arrow-lines">
                 <p v-for="(line, lineIndex) in bullet" :key="`hero-bullet-line-${index}-${lineIndex}`" class="line-text">
                   {{ line }}
@@ -1916,7 +1947,11 @@ onBeforeUnmount(() => {
         <div class="tutorial-layout">
           <div class="tutorial-list text-rect">
             <div v-for="(item, index) in siteContent.sections.tutorial.bullets" :key="`tutorial-${index}`" class="tutorial-item">
-              <span class="tutorial-marker">▸</span>
+              <span class="tutorial-marker" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="#8EAADC" width="18" height="18">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                </svg>
+              </span>
               <p>{{ item }}</p>
             </div>
           </div>
@@ -2570,12 +2605,12 @@ onBeforeUnmount(() => {
 }
 
 .header-inner {
-  position: relative;
   min-height: 74px;
   display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 4px 0;
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 4px 0 4px 6px;
 }
 
 .header-inner.without-logo {
@@ -2583,33 +2618,28 @@ onBeforeUnmount(() => {
 }
 
 .logo-box {
-  position: absolute;
-  left: -12px;
-  top: 50%;
-  transform: translateY(-50%);
-  height: 78px;
+  position: relative;
+  height: 68px;
   display: flex;
   align-items: center;
 }
 
 .logo-image {
-  max-height: 66px;
+  max-height: 56px;
   width: auto;
   display: block;
 }
 
 .header-title {
   margin: 0;
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  font-size: clamp(14px, 1.4vw, 20px);
-  font-weight: 800;
+  position: static;
+  transform: none;
+  font-size: 24px;
+  font-weight: 700;
   letter-spacing: 0.01em;
-  white-space: nowrap;
+  white-space: normal;
   line-height: 1.1;
-  color: #202a3b;
+  color: #000000;
 }
 
 .page-main {
@@ -2621,8 +2651,13 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
-  gap: 20px;
+  gap: 24px;
+  padding-top: 6px;
   padding-bottom: 0;
+}
+
+.first-screen > .shell {
+  width: min(1220px, calc(100% - 72px));
 }
 
 .content-mid-backdrop {
@@ -2651,9 +2686,10 @@ onBeforeUnmount(() => {
 
 .hero-section {
   display: grid;
-  grid-template-columns: minmax(0, 52%) minmax(380px, 48%);
+  grid-template-columns: minmax(0, 58%) minmax(0, 42%);
   grid-template-rows: auto auto;
-  gap: 22px;
+  column-gap: 40px;
+  row-gap: 14px;
   align-items: start;
   padding: 0;
 }
@@ -2661,10 +2697,10 @@ onBeforeUnmount(() => {
 .focus-title {
   grid-column: 1;
   grid-row: 1;
-  margin: 2px 0 12px;
-  font-size: clamp(31px, 3.7vw, 46px);
+  margin: 2px 0 10px;
+  font-size: 32px;
   font-weight: 800;
-  color: #162740;
+  color: #333333;
   line-height: 1.1;
 }
 
@@ -2673,23 +2709,32 @@ onBeforeUnmount(() => {
   grid-row: 2;
   display: flex;
   flex-direction: column;
-  gap: clamp(14px, 1.55vw, 22px);
-  justify-content: flex-start;
+  width: min(80%, 520px);
+  margin-right: auto;
+  min-height: 0;
+  height: auto;
+  padding: 0;
+  gap: 0;
+  justify-content: space-between;
   align-self: start;
 }
 
 .arrow-group {
   display: flex;
-  gap: 12px;
+  align-items: flex-start;
+  gap: 10px;
   margin: 0;
+  min-height: 0;
 }
 
 .arrow-icon {
-  color: var(--brand-strong);
-  font-size: 22px;
-  line-height: 1;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
   margin-top: 2px;
-  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .arrow-lines {
@@ -2700,14 +2745,17 @@ onBeforeUnmount(() => {
 
 .line-text {
   margin: 0;
-  font-size: clamp(16px, 1.26vw, 19px);
-  line-height: 1.76;
-  color: #000000;
+  font-size: 1rem;
+  line-height: 1.56;
+  font-weight: 400;
+  color: #1a1a1a;
   text-align: justify;
   text-justify: inter-word;
+  text-align-last: left;
   hyphens: auto;
   overflow-wrap: break-word;
   letter-spacing: 0.003em;
+  word-spacing: 0.02em;
 }
 
 .hero-media-card {
@@ -2723,8 +2771,9 @@ onBeforeUnmount(() => {
   position: relative;
   margin-top: 0;
   width: 100%;
+  aspect-ratio: 16 / 9;
   min-height: 0;
-  height: auto;
+  height: auto !important;
   align-self: stretch;
   overflow: hidden;
 }
@@ -2790,27 +2839,30 @@ onBeforeUnmount(() => {
   justify-content: center;
   align-items: center;
   flex-wrap: nowrap;
-  gap: clamp(28px, 4.5vw, 74px);
-  margin: 18px auto 22px;
+  gap: 24px;
+  margin: 8px auto 12px;
   padding: 0;
 }
 
 .pill-btn {
   border: 1px solid rgba(28, 77, 140, 0.24);
   border-radius: 999px;
-  min-height: 44px;
-  background: linear-gradient(140deg, #2e6cbc, #1f5496);
-  color: #ffffff;
-  font-weight: 800;
+  min-height: 42px;
+  min-width: 140px;
+  padding: 10px 32px;
+  background: #8eaadc;
+  color: rgb(0, 0, 0);
+  font-size: 0.875rem;
+  font-weight: 700;
   letter-spacing: 0.02em;
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease, background 0.2s ease;
-  box-shadow: 0 8px 16px rgba(27, 64, 113, 0.22);
+  box-shadow: 0 8px 16px rgba(70, 98, 145, 0.22);
 }
 
 .pill-btn:hover {
   transform: translateY(-2px);
-  box-shadow: 0 12px 22px rgba(24, 57, 103, 0.28);
+  box-shadow: 0 12px 22px rgba(70, 98, 145, 0.28);
   filter: brightness(1.04);
 }
 
@@ -2818,23 +2870,23 @@ onBeforeUnmount(() => {
   opacity: 0.64;
   cursor: not-allowed;
   transform: none;
-  box-shadow: 0 4px 10px rgba(49, 76, 117, 0.12);
+  box-shadow: 0 4px 10px rgba(70, 98, 145, 0.14);
   filter: none;
 }
 
 .pill-btn.muted {
-  background: linear-gradient(145deg, #c4d2ea, #9ab2d9);
+  background: #dee6f6;
+  color: rgb(89, 89, 89);
 }
 
 .pill-btn-paper {
-  background: linear-gradient(145deg, #dce6f4, #c6d6ec);
-  color: #17365f;
+  background: #dee6f6;
+  color: rgb(89, 89, 89);
 }
 
 .nav-section .pill-btn {
-  width: clamp(94px, 10.2vw, 122px);
-  min-width: clamp(94px, 10.2vw, 122px);
-  max-width: clamp(94px, 10.2vw, 122px);
+  width: auto;
+  max-width: none;
 }
 
 .long-btn {
@@ -2907,8 +2959,10 @@ onBeforeUnmount(() => {
 
 .panel-note {
   margin: 8px 0 0;
-  font-size: 14px;
-  color: var(--text-muted);
+  font-size: 1rem;
+  line-height: 1.56;
+  font-weight: 400;
+  color: #1a1a1a;
 }
 
 .panel-note-row {
@@ -2945,7 +2999,7 @@ onBeforeUnmount(() => {
 }
 
 .video-card-wide {
-  margin-top: clamp(24px, 2.4vw, 34px);
+  margin-top: clamp(18px, 1.9vw, 26px);
   width: var(--result-video-bottom-width);
   margin-left: auto;
   margin-right: auto;
@@ -3038,9 +3092,10 @@ onBeforeUnmount(() => {
 .tutorial-item p,
 .declaration-text {
   margin: 0;
-  font-size: clamp(14px, 0.96vw, 17px);
-  line-height: 1.72;
-  color: #000000;
+  font-size: 1rem;
+  line-height: 1.56;
+  font-weight: 400;
+  color: #1a1a1a;
   text-align: justify;
   text-justify: inter-word;
   hyphens: auto;
@@ -3116,6 +3171,11 @@ onBeforeUnmount(() => {
   transform: none;
 }
 
+.dataset-label-row span:first-child,
+.dataset-btn-row .pill-btn:first-child {
+  transform: translateX(-20px);
+}
+
 .dataset-card > .progressive-image-wrap {
   width: min(66%, 420px);
 }
@@ -3151,11 +3211,13 @@ onBeforeUnmount(() => {
 }
 
 .tutorial-marker {
-  color: var(--brand-strong);
-  font-size: 21px;
-  line-height: 1;
-  font-weight: 800;
-  transform: translateY(0);
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  margin-top: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .tutorial-media {
@@ -4085,19 +4147,20 @@ onBeforeUnmount(() => {
 
   .header-inner {
     min-height: 60px;
+    gap: 8px;
+    padding-left: 2px;
   }
 
   .logo-box {
-    height: 58px;
-    left: -6px;
+    height: 52px;
   }
 
   .logo-image {
-    max-height: 50px;
+    max-height: 44px;
   }
 
   .header-title {
-    font-size: clamp(13px, 2.1vw, 17px);
+    font-size: clamp(16px, 2.8vw, 20px);
     white-space: normal;
   }
 
@@ -4107,9 +4170,22 @@ onBeforeUnmount(() => {
     padding: 0;
   }
 
+  .hero-bullet-list {
+    width: 100%;
+    min-height: 0;
+    height: auto;
+    gap: 14px;
+    justify-content: flex-start;
+    align-self: start;
+  }
+
   .first-screen {
     min-height: auto;
     gap: 16px;
+  }
+
+  .first-screen > .shell {
+    width: min(1140px, calc(100% - 24px));
   }
 
   .hero-media-wrap {
@@ -4145,7 +4221,7 @@ onBeforeUnmount(() => {
   .intro-lines p,
   .tutorial-item p,
   .declaration-text {
-    font-size: clamp(15px, 2.4vw, 18px);
+    font-size: 1rem;
   }
 
   .tutorial-layout .tutorial-list {
@@ -4273,6 +4349,10 @@ onBeforeUnmount(() => {
 
   .page-main {
     padding-top: calc(var(--header-fixed-height) + 12px);
+  }
+
+  .first-screen > .shell {
+    width: min(1140px, calc(100% - 18px));
   }
 
   .nav-section {
