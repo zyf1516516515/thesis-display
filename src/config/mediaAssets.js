@@ -1,6 +1,6 @@
-const DEFAULT_PREVIEW_BASE_URL = 'https://thesis-display-bucket.oss-ap-southeast-1.aliyuncs.com'
+const DEFAULT_PREVIEW_BASE_URL = 'https://thesis-display-oss-bucket.sylg.chat'
 const DEFAULT_DOWNLOAD_BASE_URL = 'https://thesis-display-bucket.oss-ap-southeast-1.aliyuncs.com'
-const DEFAULT_PLACEHOLDER_BASE_URL = 'https://thesis-display-bucket.oss-ap-southeast-1.aliyuncs.com'
+const DEFAULT_PLACEHOLDER_BASE_URL = 'https://thesis-display-oss-bucket.sylg.chat'
 
 const PREVIEW_BASE_URL = normalizeBaseUrl(import.meta.env.VITE_OSS_PREVIEW_BASE_URL || DEFAULT_PREVIEW_BASE_URL)
 const DOWNLOAD_BASE_URL = normalizeBaseUrl(import.meta.env.VITE_OSS_DOWNLOAD_BASE_URL || DEFAULT_DOWNLOAD_BASE_URL)
