@@ -3414,11 +3414,21 @@ onBeforeUnmount(() => {
   max-height: none;
 }
 
-/* Keep Underwater drone left edge fixed, extend visual width to the right by 20px. */
-.ext-underwater-expand-right .media-image {
-  width: calc(100% + 20px);
-  max-width: none;
+/* Keep Underwater drone left edge aligned with peers, and expand only on the right by 20px. */
+.panel-card > .progressive-image-wrap.ext-underwater-expand-right {
+  width: calc(var(--content-media-width) + 20px);
+  max-width: calc(100% + 20px);
+  margin-left: calc((100% - var(--content-media-width)) / 2 - 10px);
+  margin-right: auto;
+  overflow: visible;
+}
+
+.panel-card > .progressive-image-wrap.ext-underwater-expand-right .media-image {
+  display: block;
+  width: 100%;
   height: auto;
+  max-width: none;
+  object-position: left center;
 }
 
 .original-media-overlay {

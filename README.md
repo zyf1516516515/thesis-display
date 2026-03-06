@@ -43,14 +43,16 @@ The project separates preview resources and original-download resources in
 `src/config/mediaAssets.js`.
 
 Default behavior:
-- preview URLs use CDN domain `thesis-display-oss-bucket.sylg.chat`
+- preview URLs use OSS origin domain `thesis-display-bucket.oss-ap-southeast-1.aliyuncs.com`
 - download URLs use OSS origin domain `thesis-display-bucket.oss-ap-southeast-1.aliyuncs.com`
 
 Configure these environment variables in `.env.production`:
 
 ```dotenv
-VITE_OSS_PREVIEW_BASE_URL=https://thesis-display-oss-bucket.sylg.chat
+VITE_OSS_PREVIEW_BASE_URL=https://thesis-display-bucket.oss-ap-southeast-1.aliyuncs.com
 VITE_OSS_PREVIEW_PREFIX=public_min
+VITE_OSS_PLACEHOLDER_BASE_URL=https://thesis-display-bucket.oss-ap-southeast-1.aliyuncs.com
+VITE_OSS_PLACEHOLDER_PREFIX=svg_olaceholder
 
 # Recommended: point this to a dedicated download domain/path configured to
 # return Content-Disposition: attachment.
